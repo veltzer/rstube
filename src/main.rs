@@ -5,6 +5,8 @@ use std::io::{self, BufRead, Write};
 use std::process::{Command, Stdio};
 
 #[derive(Parser)]
+#[command(name = "rstube")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Search and play YouTube videos via yt-dlp + mpv")]
 struct Cli {
     /// Search query, or a direct YouTube URL
@@ -21,6 +23,10 @@ struct Cli {
     /// Auto-play the first result without prompting
     #[arg(short = 'f', long)]
     first: bool,
+
+    /// Print full build/version info (git sha, rustc, build time) and exit
+    #[arg(long = "version-full")]
+    version_full: bool,
 }
 
 #[derive(Deserialize)]
@@ -35,6 +41,12 @@ struct Entry {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    if cli.version_full {
+        print_version();
+        return Ok(());
+    }
+
     ensure_tool("yt-dlp")?;
 
     if cli.query.is_empty() {
@@ -55,6 +67,17 @@ fn main() -> Result<()> {
 
     ensure_tool("mpv")?;
     play(&url, cli.audio_only)
+}
+
+fn print_version() {
+    println!("rstube {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
+    println!("GIT_DESCRIBE: {}", env!("GIT_DESCRIBE"));
+    println!("GIT_SHA: {}", env!("GIT_SHA"));
+    println!("GIT_BRANCH: {}", env!("GIT_BRANCH"));
+    println!("GIT_DIRTY: {}", env!("GIT_DIRTY"));
+    println!("RUSTC_SEMVER: {}", env!("RUSTC_SEMVER"));
+    println!("RUST_EDITION: {}", env!("RUST_EDITION"));
+    println!("BUILD_TIMESTAMP: {}", env!("BUILD_TIMESTAMP"));
 }
 
 fn is_url(s: &str) -> bool {
