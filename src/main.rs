@@ -1,5 +1,5 @@
-use anyhow::{bail, Context, Result};
-use clap::Parser;
+use anyhow::{Context, Result, bail};
+use clap::{Parser, Subcommand};
 use serde::Deserialize;
 use std::io::{self, BufRead, Write};
 use std::process::{Command, Stdio};
@@ -9,24 +9,31 @@ use std::process::{Command, Stdio};
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Search and play YouTube videos via yt-dlp + mpv")]
 struct Cli {
-    /// Search query, or a direct YouTube URL
-    query: Vec<String>,
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    /// Number of search results to show
-    #[arg(short = 'n', long, default_value_t = 10)]
-    results: usize,
+#[derive(Subcommand)]
+enum Commands {
+    /// Search YouTube and play a selected result
+    Search {
+        /// Search query, or a direct YouTube URL
+        query: Vec<String>,
 
-    /// Play audio only
-    #[arg(short = 'a', long)]
-    audio_only: bool,
+        /// Number of search results to show
+        #[arg(short = 'n', long, default_value_t = 10)]
+        results: usize,
 
-    /// Auto-play the first result without prompting
-    #[arg(short = 'f', long)]
-    first: bool,
+        /// Play audio only
+        #[arg(short = 'a', long)]
+        audio_only: bool,
 
-    /// Print full build/version info (git sha, rustc, build time) and exit
-    #[arg(long = "version-full")]
-    version_full: bool,
+        /// Auto-play the first result without prompting
+        #[arg(short = 'f', long)]
+        first: bool,
+    },
+    /// Print full build/version info (git sha, rustc, build time)
+    Version,
 }
 
 #[derive(Deserialize)]
@@ -41,32 +48,38 @@ struct Entry {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-
-    if cli.version_full {
-        print_version();
-        return Ok(());
+    match cli.command {
+        Commands::Version => {
+            print_version();
+            Ok(())
+        }
+        Commands::Search { query, results, audio_only, first } => {
+            run_search(query, results, audio_only, first)
+        }
     }
+}
 
+fn run_search(query: Vec<String>, results: usize, audio_only: bool, first: bool) -> Result<()> {
     ensure_tool("yt-dlp")?;
 
-    if cli.query.is_empty() {
+    if query.is_empty() {
         bail!("provide a search query or a YouTube URL");
     }
-    let query = cli.query.join(" ");
+    let query = query.join(" ");
 
     let url = if is_url(&query) {
         query
     } else {
-        let entries = search(&query, cli.results)?;
+        let entries = search(&query, results)?;
         if entries.is_empty() {
             bail!("no results for {query:?}");
         }
-        let choice = if cli.first { 0 } else { prompt_choice(&entries)? };
+        let choice = if first { 0 } else { prompt_choice(&entries)? };
         format!("https://www.youtube.com/watch?v={}", entries[choice].id)
     };
 
     ensure_tool("mpv")?;
-    play(&url, cli.audio_only)
+    play(&url, audio_only)
 }
 
 fn print_version() {
