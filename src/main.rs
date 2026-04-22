@@ -135,13 +135,22 @@ enum PlaylistsAction {
 
 #[derive(Subcommand)]
 enum VideosAction {
-    /// Add a single video under a short name (url or 11-char video id)
-    Add { name: String, url_or_id: String },
+    /// Add a single video under a short name. url-or-id accepts a full watch
+    /// URL, a youtu.be short URL (both may include ?t=N), or a bare 11-char
+    /// video id. A non-zero offset flags the video as "partial" immediately.
+    Add {
+        name: String,
+        url_or_id: String,
+        /// Start offset (seconds, "1m23s", "1:23", etc). Overrides any `t=`
+        /// in the URL.
+        #[arg(long)]
+        start: Option<String>,
+    },
     /// Remove a configured video by name
     Remove { name: String },
     /// List configured videos in order
     List,
-    /// Print a single configured video's id by name
+    /// Print a single configured video's id (and start offset if any) by name
     Show { name: String },
     /// Fetch title+duration from YouTube and update the local cache
     Fetch {
@@ -494,26 +503,69 @@ _rstube_video_names()    { _rstube_names_in_section videos; }
 
 fn run_videos(action: VideosAction) -> Result<()> {
     match action {
-        VideosAction::Add { name, url_or_id } => {
-            let video_id = config::normalize_video_id(&url_or_id)?;
+        VideosAction::Add { name, url_or_id, start } => {
+            let (video_id, url_offset) = config::parse_video_spec(&url_or_id)?;
+            // Explicit --start wins over a URL's t= param.
+            let offset = match start {
+                Some(s) => Some(config::parse_time_spec(&s)?),
+                None => url_offset,
+            };
             let mut cfg = config::load();
             if cfg.videos.iter().any(|v| v.name == name) {
                 bail!("video named \"{name}\" already exists");
             }
-            cfg.videos.push(config::NamedVideo { name: name.clone(), video_id: video_id.clone() });
+            cfg.videos.push(config::NamedVideo {
+                name: name.clone(),
+                video_id: video_id.clone(),
+                start_offset_secs: offset.filter(|&n| n > 0),
+            });
             config::save(&cfg)?;
-            println!("added \"{name}\" → {video_id}");
+
+            // Seed a position if the offset is non-zero AND there's no
+            // existing position for this video (existing watch progress
+            // always wins over a fresh offset hint).
+            if let Some(secs) = offset
+                && secs > 0
+                && state::get_position(&video_id).is_none()
+            {
+                let pos = state::Position {
+                    position_secs: secs as f64,
+                    duration_secs: None,
+                    updated_at: state::now_secs(),
+                };
+                state::upsert_position(&video_id, pos)?;
+            }
+
+            match offset {
+                Some(secs) if secs > 0 => {
+                    println!("added \"{name}\" → {video_id} @ {}", fmt_dur(secs as f64));
+                    println!("(seeded as partial; show up in `rstube play partial`)");
+                }
+                _ => println!("added \"{name}\" → {video_id}"),
+            }
             println!("(stored in {})", config::config_path().display());
             Ok(())
         }
         VideosAction::Remove { name } => {
             let mut cfg = config::load();
-            let before = cfg.videos.len();
-            cfg.videos.retain(|v| v.name != name);
-            if cfg.videos.len() == before {
+            let Some(idx) = cfg.videos.iter().position(|v| v.name == name) else {
                 bail!("no video named \"{name}\"");
-            }
+            };
+            let removed = cfg.videos.remove(idx);
             config::save(&cfg)?;
+
+            // If this video was added with an offset and its current saved
+            // position still equals that offset (i.e. the user never actually
+            // played it past the seed), clean up the position too. Otherwise
+            // the user has real watch progress — leave it alone.
+            if let Some(seeded) = removed.start_offset_secs.filter(|&n| n > 0)
+                && let Some(pos) = state::get_position(&removed.video_id)
+                && (pos.position_secs - seeded as f64).abs() < 0.5
+            {
+                if let Err(e) = state::delete_position(&removed.video_id) {
+                    eprintln!("warning: failed to clear seeded position: {e}");
+                }
+            }
             println!("removed \"{name}\"");
             Ok(())
         }
@@ -525,7 +577,11 @@ fn run_videos(action: VideosAction) -> Result<()> {
                 return Ok(());
             }
             for (i, v) in cfg.videos.iter().enumerate() {
-                println!("{:>2}. {}  {}", i + 1, v.name, v.video_id);
+                let offset = v.start_offset_secs
+                    .filter(|&n| n > 0)
+                    .map(|n| format!(" @ {}", fmt_dur(n as f64)))
+                    .unwrap_or_default();
+                println!("{:>2}. {}  {}{offset}", i + 1, v.name, v.video_id);
             }
             Ok(())
         }
@@ -534,7 +590,10 @@ fn run_videos(action: VideosAction) -> Result<()> {
             let Some(v) = cfg.videos.iter().find(|v| v.name == name) else {
                 bail!("no video named \"{name}\"");
             };
-            println!("{}", v.video_id);
+            match v.start_offset_secs.filter(|&n| n > 0) {
+                Some(n) => println!("{} @ {}", v.video_id, fmt_dur(n as f64)),
+                None => println!("{}", v.video_id),
+            }
             Ok(())
         }
         VideosAction::Fetch { name } => {

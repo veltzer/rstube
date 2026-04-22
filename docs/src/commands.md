@@ -14,7 +14,7 @@ Top-level commands in `rstube`.
 | `rstube forget finished` | Pick a finished video and forget it (reappears as "new") |
 | `rstube history [-n N]` | Show the last N history entries (default 20) |
 | `rstube playlists ...` | Manage configured playlists (see [Playlists](playlists.md)) |
-| `rstube videos ...` | Manage individually configured videos (see [Videos](videos.md)) |
+| `rstube videos ...` | Manage individually configured videos, with optional start offsets (see [Videos](videos.md)) |
 | `rstube install-deps` | Install missing `mpv` / `yt-dlp` |
 | `rstube complete <shell>` | Print shell completion script |
 | `rstube version` | Print build info (git sha, rustc, build time) |

@@ -38,12 +38,49 @@ rstube videos fetch <name>    # just one
 A "url-or-id" can be any of:
 
 - Full watch URL: `https://www.youtube.com/watch?v=dQw4w9WgXcQ`
-- Watch URL with tracking params: `https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10s` (trailing params are stripped)
+- Watch URL with `&t=...`: `https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10s`
 - Short URL: `https://youtu.be/dQw4w9WgXcQ`
+- Short URL with `?t=...`: `https://youtu.be/gl2GaCDt8BE?t=178`
 - Bare 11-char id: `dQw4w9WgXcQ`
 
-rstube normalizes all of these to the bare id and stores only the id in
-config.
+## Start offsets
+
+If the URL includes a `t=...` query parameter, rstube extracts the
+offset and treats the video as **already in progress** — it will show
+up in `rstube play partial` / `show partial` immediately, and when you
+play it mpv starts at that offset instead of zero.
+
+Offset values accept seconds (`178`, `178s`), YouTube's compound form
+(`2m58s`, `1h2m3s`), and colon form (`2:58`, `1:02:03`).
+
+You can also set an offset explicitly:
+
+```bash
+rstube videos add my-talk "https://youtu.be/abc..." --start 1m23s
+rstube videos add my-talk "https://youtu.be/abc..." --start 1:23
+rstube videos add my-talk "https://youtu.be/abc..." --start 83
+```
+
+If both `--start` and a URL `t=` are present, `--start` wins.
+
+### How to copy a timestamped URL from YouTube
+
+1. **From the web UI:** pause the video at the moment you want; right-click
+   on the video itself → "Copy video URL at current time".
+2. **From the Share button:** click Share, tick "Start at [current time]",
+   copy the URL shown.
+3. **From the mobile app:** Share sheet has a "Start at" toggle.
+
+### What happens at play time
+
+- If there's no saved position yet, playback starts at the configured
+  offset.
+- If there's already a saved position (because you've played the video
+  past the offset), the saved position wins — rstube's own progress
+  always beats a fresh-start hint.
+- Removing a configured video clears the seeded position only if you
+  never played it past the offset. Real watch progress is preserved (use
+  `rstube forget partial` to wipe that too).
 
 ## How configured videos flow through commands
 
@@ -89,9 +126,12 @@ url = "https://www.youtube.com/playlist?list=PLABCDEF"
 name = "rick"
 video_id = "dQw4w9WgXcQ"
 
+# Video with a start offset — added via `videos add ... ?t=178`
+# or `--start 2:58`. Shows up as partial from 2:58.
 [[videos]]
 name = "that-talk"
 video_id = "kxopViU98Xo"
+start_offset_secs = 178
 ```
 
 Same config file as playlists — see [Playlists](playlists.md) for the
