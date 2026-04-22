@@ -419,9 +419,7 @@ fn filter_rows<'a>(rows: &'a [PickerRow], filter: &str) -> Vec<&'a PickerRow> {
 }
 
 fn remove_position(video_id: &str) -> Result<()> {
-    let mut positions = state::load_positions();
-    positions.remove(video_id);
-    state::save_positions(&positions)
+    state::delete_position(video_id)
 }
 
 fn draw(

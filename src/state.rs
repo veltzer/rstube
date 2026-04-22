@@ -42,7 +42,7 @@ pub fn state_dir() -> PathBuf {
 }
 
 pub fn positions_path() -> PathBuf {
-    state_dir().join("positions.json")
+    state_dir().join("positions.redb")
 }
 
 pub fn history_path() -> PathBuf {
@@ -67,34 +67,69 @@ pub fn ensure_state_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
-pub fn load_positions() -> HashMap<String, Position> {
-    let path = positions_path();
-    let Ok(bytes) = fs::read(&path) else { return HashMap::new(); };
-    serde_json::from_slice(&bytes).unwrap_or_default()
-}
+use redb::ReadableTable;
 
-/// Atomic write: serialize to a tmp file in the same dir, then rename over the
-/// target. Prevents corruption if we're killed mid-write.
-pub fn save_positions(positions: &HashMap<String, Position>) -> Result<()> {
+// Positions are stored in a redb key/value database. Keys are video ids
+// (strings); values are JSON-serialized `Position` records (bytes). Using
+// JSON as the value encoding keeps the file trivially inspectable with
+// `redb dump` and lets us add Position fields without a schema migration.
+const POSITIONS_TABLE: redb::TableDefinition<&str, &[u8]> =
+    redb::TableDefinition::new("positions");
+
+fn open_positions_db() -> Result<redb::Database> {
     ensure_state_dir()?;
     let path = positions_path();
-    let tmp = path.with_extension("json.tmp");
-    let bytes = serde_json::to_vec_pretty(positions)?;
-    fs::write(&tmp, &bytes)
-        .with_context(|| format!("failed to write {}", tmp.display()))?;
-    fs::rename(&tmp, &path)
-        .with_context(|| format!("failed to rename into {}", path.display()))?;
-    Ok(())
+    redb::Database::create(&path)
+        .with_context(|| format!("failed to open positions db at {}", path.display()))
+}
+
+pub fn load_positions() -> HashMap<String, Position> {
+    let Ok(db) = open_positions_db() else { return HashMap::new(); };
+    let Ok(txn) = db.begin_read() else { return HashMap::new(); };
+    // Missing table on a fresh db is not an error — just no entries yet.
+    let Ok(table) = txn.open_table(POSITIONS_TABLE) else { return HashMap::new(); };
+    let mut out = HashMap::new();
+    let Ok(iter) = table.iter() else { return out; };
+    for row in iter.flatten() {
+        let (k, v) = row;
+        if let Ok(pos) = serde_json::from_slice::<Position>(v.value()) {
+            out.insert(k.value().to_owned(), pos);
+        }
+    }
+    out
 }
 
 pub fn upsert_position(video_id: &str, pos: Position) -> Result<()> {
-    let mut positions = load_positions();
-    positions.insert(video_id.to_owned(), pos);
-    save_positions(&positions)
+    let db = open_positions_db()?;
+    let txn = db.begin_write().context("begin_write positions")?;
+    {
+        let mut table = txn.open_table(POSITIONS_TABLE).context("open positions table")?;
+        let bytes = serde_json::to_vec(&pos)?;
+        table
+            .insert(video_id, bytes.as_slice())
+            .context("insert position")?;
+    }
+    txn.commit().context("commit positions")?;
+    Ok(())
 }
 
 pub fn get_position(video_id: &str) -> Option<Position> {
-    load_positions().get(video_id).cloned()
+    let db = open_positions_db().ok()?;
+    let txn = db.begin_read().ok()?;
+    let table = txn.open_table(POSITIONS_TABLE).ok()?;
+    let row = table.get(video_id).ok()??;
+    serde_json::from_slice::<Position>(row.value()).ok()
+}
+
+pub fn delete_position(video_id: &str) -> Result<()> {
+    let db = open_positions_db()?;
+    let txn = db.begin_write().context("begin_write positions")?;
+    {
+        let mut table = txn.open_table(POSITIONS_TABLE).context("open positions table")?;
+        table.remove(video_id).context("remove position")?;
+    }
+    txn.commit().context("commit positions")?;
+    Ok(())
 }
 
 pub fn append_history(entry: &HistoryEntry) -> Result<()> {
