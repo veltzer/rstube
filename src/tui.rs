@@ -10,6 +10,7 @@ use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use std::collections::HashMap;
 use std::io::{Stdout, stdout};
 use std::time::Duration;
 
@@ -86,13 +87,58 @@ pub fn run_partial_picker() -> Result<(usize, Option<Selection>)> {
     Ok((count, sel))
 }
 
+/// Classify a position record by the same rules `is_partial` /
+/// `is_finished` use on history entries.
+fn position_classify(pos: &state::Position) -> PositionClass {
+    if pos.position_secs < MIN_PARTIAL_SECS {
+        return PositionClass::Trivial;
+    }
+    match pos.duration_secs {
+        Some(d) if d > 0.0 => {
+            if pos.position_secs >= d - PARTIAL_TAIL_MARGIN_SECS {
+                PositionClass::Finished
+            } else {
+                PositionClass::Partial
+            }
+        }
+        _ => PositionClass::Partial,
+    }
+}
+
+enum PositionClass {
+    Trivial,
+    Partial,
+    Finished,
+}
+
+/// Build a synthetic `HistoryEntry` from a `Position` for a video that has no
+/// real history row. Title/URL are recovered from the playlist cache if
+/// possible; otherwise we fall back to a YouTube-watch URL built from the id.
+fn synthetic_entry_from_position(video_id: &str, pos: &state::Position) -> HistoryEntry {
+    let (title, url) = match state::find_in_playlist_cache(video_id) {
+        Some(item) => {
+            let url = item.url();
+            (item.title, url)
+        }
+        None => (None, format!("https://www.youtube.com/watch?v={video_id}")),
+    };
+    HistoryEntry {
+        ts_start: pos.updated_at,
+        ts_end: pos.updated_at,
+        video_id: video_id.to_owned(),
+        url,
+        title,
+        duration_secs: pos.duration_secs,
+        position_on_exit: pos.position_secs,
+        audio_only: false,
+    }
+}
+
 /// History entries eligible as "partial": most recent partially-watched
-/// session per video. Unlike a naive "most recent session", this prefers any
-/// session that was actually watched (≥ MIN_PARTIAL_SECS) over a more recent
-/// 0-second one — otherwise a quick accidental reopen clobbers the partial
-/// entry.
+/// session per video. Unions history-derived entries with positions.json so a
+/// session that never got a history line (older binary, or the tracker wrote
+/// positions but the phase-1 history line was lost) still shows up.
 pub fn partial_candidates() -> Vec<HistoryEntry> {
-    use std::collections::HashMap;
     let mut by_id: HashMap<String, HistoryEntry> = HashMap::new();
     for e in state::load_all_history() {
         if !is_partial(&e) {
@@ -107,15 +153,26 @@ pub fn partial_candidates() -> Vec<HistoryEntry> {
             })
             .or_insert(e);
     }
+    for (video_id, pos) in state::load_positions() {
+        if by_id.contains_key(&video_id) {
+            continue;
+        }
+        if matches!(position_classify(&pos), PositionClass::Partial) {
+            by_id.insert(
+                video_id.clone(),
+                synthetic_entry_from_position(&video_id, &pos),
+            );
+        }
+    }
     let mut out: Vec<HistoryEntry> = by_id.into_values().collect();
     out.sort_by(|a, b| b.ts_end.cmp(&a.ts_end));
     out
 }
 
 /// History entries that count as "finished": most recent finished session
-/// per video.
+/// per video. Also unions with positions.json for parity with
+/// `partial_candidates`.
 pub fn finished_candidates() -> Vec<HistoryEntry> {
-    use std::collections::HashMap;
     let mut by_id: HashMap<String, HistoryEntry> = HashMap::new();
     for e in state::load_all_history() {
         if !is_finished(&e) {
@@ -129,6 +186,17 @@ pub fn finished_candidates() -> Vec<HistoryEntry> {
                 }
             })
             .or_insert(e);
+    }
+    for (video_id, pos) in state::load_positions() {
+        if by_id.contains_key(&video_id) {
+            continue;
+        }
+        if matches!(position_classify(&pos), PositionClass::Finished) {
+            by_id.insert(
+                video_id.clone(),
+                synthetic_entry_from_position(&video_id, &pos),
+            );
+        }
     }
     let mut out: Vec<HistoryEntry> = by_id.into_values().collect();
     out.sort_by(|a, b| b.ts_end.cmp(&a.ts_end));

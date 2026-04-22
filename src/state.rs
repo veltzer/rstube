@@ -175,6 +175,20 @@ pub fn load_playlist_cache(url: &str) -> Option<PlaylistCacheEntry> {
     load_playlist_cache_file().entries.remove(url)
 }
 
+/// Search every cached playlist for a video by id. Useful for surfacing a
+/// title when we only have a position entry and no history row.
+pub fn find_in_playlist_cache(video_id: &str) -> Option<PlaylistItem> {
+    let cache = load_playlist_cache_file();
+    for entry in cache.entries.values() {
+        for item in &entry.items {
+            if item.id == video_id {
+                return Some(item.clone());
+            }
+        }
+    }
+    None
+}
+
 pub fn save_playlist_cache(url: &str, items: &[PlaylistItem]) -> Result<()> {
     ensure_state_dir()?;
     let mut cache = load_playlist_cache_file();
