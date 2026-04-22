@@ -6,27 +6,42 @@ rstube maintains two pieces of per-video state:
   mpv plays, so killing the terminal doesn't lose progress.
 - **history** — a JSON-lines log of every playback session. Append-only.
 
-## What counts as "partial"
+## What counts as "partial" vs "finished"
 
-`rstube play partial` shows history entries where:
+Classification is based on each video's **most recent meaningful session**
+— "meaningful" meaning position ≥ 10 seconds, so an accidental
+reopen-and-immediately-quit can't shadow a real session.
 
-- The saved position is ≥ 10 seconds (quick-quit noise is ignored).
-- If the duration is known, the position is more than 30 seconds before
-  the end (finished videos — those within 30s of the end — are treated
-  as done and don't show up again).
+A session is:
 
-If you open a video and immediately quit (before 10 seconds), the new
-0-second entry does **not** shadow an older session that was actually
-watched — the partial picker prefers the most recent *partial* session
-per video, not the most recent session overall.
+- **Partial** — position ≥ 10s, and more than 30s before the end (or
+  duration is unknown).
+- **Finished** — duration is known and position is within 30s of the end.
+- **Trivial** — less than 10s watched. Ignored for classification.
+
+Each video appears in **exactly one** bucket at a time, based on its
+most recent non-trivial session. If you finish a video and then start
+watching it again, the new partial session immediately moves it out of
+the finished bucket and into partial.
+
+`rstube show partial` / `play partial` read from the partial bucket;
+`show finished` reads from the finished bucket.
 
 ## Commands that interact with history
 
-- `rstube history [-n N]` — print the last N entries.
-- `rstube play partial` — pick an in-progress video.
-- Inside any picker, `d` removes the selected entry's saved position —
-  useful if a video gets stuck in a partially-watched state you don't
-  want to resume.
+- `rstube history [-n N]` — print the last N entries. Unclean-exit
+  sessions appear with a `[unclean exit]` marker.
+- `rstube play partial` — pick an in-progress video to resume.
+- `rstube show partial` / `show finished` — print text-only lists of
+  videos classified from history + positions.
+- `rstube forget partial` / `forget finished` — pick a video to forget.
+  Removes **all** of its history lines (phase-1 and phase-2) plus the
+  entry in `positions.redb`, so the video reappears as "new". The
+  rewrite of `history.jsonl` is atomic (tmp-then-rename).
+- Inside any picker, `d` removes only the selected entry's saved
+  position (leaves history intact). Lighter-weight than `forget` —
+  useful if you want the video to stop resuming but still count as
+  "seen".
 
 ## Crash and power-loss safety
 

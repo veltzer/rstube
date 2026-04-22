@@ -56,7 +56,31 @@ Every video from every configured playlist in one picker — no history
 filtering. Useful for rewatching, or when you can't remember which
 playlist a video was in.
 
-## 5. Useful extras
+## 5. See what's where, as text
+
+`show` mirrors `play` but prints to stdout instead of opening a picker —
+pipeable to `grep`, `wc`, anything:
+
+```bash
+rstube show new          # every unwatched video
+rstube show partial      # every partially-watched video
+rstube show finished     # titles of finished videos (add -d for details)
+```
+
+## 6. Forget a video
+
+If you want a video to re-appear as "new" (e.g. to rewatch from
+scratch):
+
+```bash
+rstube forget partial    # picker over partial videos
+rstube forget finished   # picker over finished videos
+```
+
+Select with Enter; the video's history lines and saved position are
+removed. It'll show up in `play new` again next time.
+
+## 7. Useful extras
 
 - `--refresh` on `play new` or `play any` bypasses the 24h cache and
   refetches from YouTube.

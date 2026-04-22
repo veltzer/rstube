@@ -5,11 +5,14 @@ position tracking and playlist-aware pickers.
 
 ## What it does
 
-- Reads one or more YouTube playlists you've configured.
+- Reads one or more YouTube playlists and/or individually-configured
+  videos you've set up.
 - Shows a TUI picker to pick something to watch — filtered by what you
   haven't seen yet, or unfiltered, or only videos you were partway through.
 - Launches `mpv` with the right resume position.
 - Records where you left off so you can resume next time.
+- Lets you forget a video you've watched so it cycles back into the "new"
+  pool.
 
 ## What it doesn't do
 
