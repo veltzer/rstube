@@ -5,7 +5,8 @@ mod state;
 mod tui;
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{Shell, generate};
 use std::process::{Command, Stdio};
 
 #[derive(Parser)]
@@ -41,6 +42,11 @@ enum Commands {
         #[command(subcommand)]
         action: PlaylistsAction,
     },
+    /// Generate shell completion scripts
+    Complete {
+        /// Shell to generate completions for (bash, zsh, fish, elvish, powershell)
+        shell: Shell,
+    },
     /// Print full build/version info (git sha, rustc, build time)
     Version,
 }
@@ -68,6 +74,10 @@ fn main() -> Result<()> {
         Commands::Resume => run_resume(),
         Commands::Playnew { refresh, pick } => run_playnew(refresh, pick),
         Commands::Playlists { action } => run_playlists(action),
+        Commands::Complete { shell } => {
+            print_completions(shell);
+            Ok(())
+        }
     }
 }
 
@@ -225,6 +235,55 @@ fn run_playlists(action: PlaylistsAction) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn print_completions(shell: Shell) {
+    let mut cmd = Cli::command();
+    let mut buf = Vec::new();
+    generate(shell, &mut cmd, "rstube", &mut buf);
+    let script = String::from_utf8(buf).expect("completion script should be UTF-8");
+    match shell {
+        Shell::Bash => print!("{}", inject_bash_playlist_completions(&script)),
+        _ => print!("{script}"),
+    }
+}
+
+/// Inject bash completion for playlist names on `playlists show` and
+/// `playlists remove`. Names are read from the config TOML at tab time.
+fn inject_bash_playlist_completions(script: &str) -> String {
+    let helper = r#"
+_rstube_playlist_names() {
+    local cfg="${RSTUBE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/rstube}/config.toml"
+    [[ -f "$cfg" ]] || return
+    # Match: name = "foo"  inside a [[playlists]] table. Conservative: any
+    # line matching `name = "..."` will be emitted. There are no other
+    # string fields named `name` in the schema, so this is safe.
+    grep -E '^\s*name\s*=\s*"' "$cfg" | sed -E 's/^\s*name\s*=\s*"([^"]*)".*/\1/'
+}
+"#;
+
+    let targets = [
+        "rstube__subcmd__playlists__subcmd__show)",
+        "rstube__subcmd__playlists__subcmd__remove)",
+    ];
+    let needle = "COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )";
+    let replacement = "if [[ ${cur} != -* ]] ; then\n                    COMPREPLY=( $(compgen -W \"$(_rstube_playlist_names)\" -- \"${cur}\") )\n                else\n                    COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )\n                fi";
+
+    let mut result = script.to_string();
+    for target in &targets {
+        let Some(section_start) = result.find(target) else { continue };
+        let after_start = section_start + target.len();
+        let section_len = result[after_start..]
+            .find("\n        rstube__subcmd__")
+            .unwrap_or(result.len() - after_start);
+        let section_end = after_start + section_len;
+        let section_slice = &result[section_start..section_end];
+        if let Some(rel_pos) = section_slice.find(needle) {
+            let abs_pos = section_start + rel_pos;
+            result.replace_range(abs_pos..abs_pos + needle.len(), replacement);
+        }
+    }
+    format!("{helper}{result}")
 }
 
 fn show_history(limit: usize) -> Result<()> {
