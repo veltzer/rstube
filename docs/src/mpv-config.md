@@ -6,7 +6,7 @@ Customize mpv by editing its config files directly. On Linux these live under
 
 ## Position save/restore
 
-rstube tracks positions itself (in `$XDG_STATE_HOME/rstube/positions.json`) and
+rstube tracks positions itself (in `$XDG_STATE_HOME/rstube/positions.redb`) and
 passes `--start=<secs>` to mpv when resuming. You don't need mpv's own
 save-position-on-quit for rstube's resume flow.
 

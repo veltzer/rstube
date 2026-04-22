@@ -27,7 +27,7 @@ position tracking and playlist-aware pickers.
 2. The TUI picker (ratatui + crossterm) shows the filtered list.
 3. On Enter, rstube spawns `mpv <url> --start=<resume-secs>` and streams
    mpv's IPC to write the current position to
-   `$XDG_STATE_HOME/rstube/positions.json`.
+   `$XDG_STATE_HOME/rstube/positions.redb`.
 4. On mpv exit, a line is appended to `history.jsonl`.
 
 ## Requirements

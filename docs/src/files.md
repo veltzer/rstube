@@ -16,7 +16,7 @@ Fallbacks, in order:
 
 | Location | Contents |
 |---|---|
-| `$RSTUBE_STATE_DIR/positions.json` | Per-video resume positions (JSON) |
+| `$RSTUBE_STATE_DIR/positions.redb` | Per-video resume positions (redb key/value store) |
 | `$RSTUBE_STATE_DIR/history.jsonl` | Playback history (JSON-lines, append-only) |
 | `$RSTUBE_STATE_DIR/playlist_cache.json` | Cached playlist item lists (JSON) |
 
