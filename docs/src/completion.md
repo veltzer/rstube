@@ -17,17 +17,25 @@ Or source on the fly in your `~/.bashrc`:
 source <(rstube complete bash)
 ```
 
-### Playlist-name completion
+### Name completion for playlists and videos
 
-The bash script injects a small helper that reads your config at tab
-time. These tab-complete to the names you've configured in
-`playlists add`:
+The bash script injects small helpers that read your config at tab
+time. Completion is scoped by section — playlist names never bleed
+into video slots and vice versa.
+
+Playlist names (configured via `playlists add`) complete in:
 
 - `rstube playlists show <TAB>`
 - `rstube playlists remove <TAB>`
 - `rstube playlists fetch <TAB>`
 
-The helper reads `$RSTUBE_CONFIG_DIR/config.toml`, falling back to the
+Video names (configured via `videos add`) complete in:
+
+- `rstube videos show <TAB>`
+- `rstube videos remove <TAB>`
+- `rstube videos fetch <TAB>`
+
+The helpers read `$RSTUBE_CONFIG_DIR/config.toml`, falling back to the
 XDG default.
 
 ## Zsh

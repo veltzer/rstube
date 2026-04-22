@@ -4,7 +4,7 @@
 
 | Location | Contents |
 |---|---|
-| `$RSTUBE_CONFIG_DIR/config.toml` | Configured playlists (TOML) |
+| `$RSTUBE_CONFIG_DIR/config.toml` | Configured playlists and videos (TOML) |
 
 Fallbacks, in order:
 
@@ -17,8 +17,8 @@ Fallbacks, in order:
 | Location | Contents |
 |---|---|
 | `$RSTUBE_STATE_DIR/positions.redb` | Per-video resume positions (redb key/value store) |
-| `$RSTUBE_STATE_DIR/history.jsonl` | Playback history (JSON-lines, append-only) |
-| `$RSTUBE_STATE_DIR/playlist_cache.json` | Cached playlist item lists (JSON) |
+| `$RSTUBE_STATE_DIR/history.jsonl` | Playback history (JSON-lines, append on play, rewritten on `forget`) |
+| `$RSTUBE_STATE_DIR/playlist_cache.json` | Cached playlist and single-video metadata (JSON) |
 
 Fallbacks:
 

@@ -29,11 +29,19 @@ A "url-or-id" can be any of:
 - A URL with `list=...` and other junk: also fine
 - A bare playlist id: `PLABCDEF` → normalized into a canonical URL
 
-## Ordering matters
+## Ordering
 
-Playlists are stored as an ordered list. `rstube play new` scans them in
-order and picks the first one with any unseen video — so put the playlist
-you want to watch by default at the top.
+Playlists are stored as an ordered list. That order determines:
+
+- The order `rstube playlists list` prints them.
+- The order items appear in merged views (`play new`, `play any`,
+  `show new`) — items from the first playlist come first, then the
+  second, and so on, with duplicates (same video id across playlists)
+  deduped keeping the first occurrence. Individually-configured videos
+  (see [Videos](videos.md)) are appended after all playlists.
+
+Since `play new` and friends merge everything into one picker, order
+only affects presentation, not what you can reach.
 
 ## Visibility
 

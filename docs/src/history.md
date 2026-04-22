@@ -207,7 +207,7 @@ than the gap we just closed (unclean exit leaves no record at all).
 | File | Contents |
 |---|---|
 | `positions.redb` | Resume positions (see above) |
-| `history.jsonl` | One JSON line per playback session, append-only |
+| `history.jsonl` | One JSON line per playback session; `forget` rewrites to remove matching lines |
 | `playlist_cache.json` | Cached playlist item lists, keyed by URL |
 
 All three live under the same state directory (`RSTUBE_STATE_DIR` →
