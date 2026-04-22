@@ -61,6 +61,11 @@ enum PlaylistsAction {
     List,
     /// Print a single playlist's URL by name
     Show { name: String },
+    /// Fetch playlists from YouTube and update the local cache
+    Fetch {
+        /// Playlist name to fetch (omit to fetch all configured playlists)
+        name: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -234,6 +239,26 @@ fn run_playlists(action: PlaylistsAction) -> Result<()> {
             println!("{}", pl.url);
             Ok(())
         }
+        PlaylistsAction::Fetch { name } => {
+            let cfg = config::load();
+            if cfg.playlists.is_empty() {
+                bail!("no playlists configured — add one with `rstube playlists add <name> <url-or-id>`");
+            }
+            let targets: Vec<&config::NamedPlaylist> = match name {
+                Some(n) => {
+                    let Some(pl) = cfg.playlists.iter().find(|p| p.name == n) else {
+                        bail!("no playlist named \"{n}\"");
+                    };
+                    vec![pl]
+                }
+                None => cfg.playlists.iter().collect(),
+            };
+            for pl in targets {
+                let items = fetch_and_cache(&pl.url)?;
+                println!("{}: {} items cached", pl.name, items.len());
+            }
+            Ok(())
+        }
     }
 }
 
@@ -265,6 +290,7 @@ _rstube_playlist_names() {
     let targets = [
         "rstube__subcmd__playlists__subcmd__show)",
         "rstube__subcmd__playlists__subcmd__remove)",
+        "rstube__subcmd__playlists__subcmd__fetch)",
     ];
     let needle = "COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )";
     let replacement = "if [[ ${cur} != -* ]] ; then\n                    COMPREPLY=( $(compgen -W \"$(_rstube_playlist_names)\" -- \"${cur}\") )\n                else\n                    COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )\n                fi";
