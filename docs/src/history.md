@@ -11,8 +11,9 @@ rstube maintains two pieces of per-video state:
 `rstube play partial` shows history entries where:
 
 - The saved position is ≥ 10 seconds (quick-quit noise is ignored).
-- If the duration is known, the position is more than 10 seconds before
-  the end (finished videos don't show up again).
+- If the duration is known, the position is more than 30 seconds before
+  the end (finished videos — those within 30s of the end — are treated
+  as done and don't show up again).
 
 If you open a video and immediately quit (before 10 seconds), the new
 0-second entry does **not** shadow an older session that was actually
@@ -63,15 +64,27 @@ for two properties:
 - `time-pos` — the current playhead, in seconds
 - `duration` — the video's total length, in seconds (if known)
 
-Whatever mpv reports is written to `positions.redb` as-is. The tracker
-doesn't track a playing/paused/buffering state of its own — it just
-snapshots whatever mpv says the playhead is. That means:
+Whatever mpv reports is compared bit-for-bit against the last value
+written to `positions.redb`. If the `(time-pos, duration)` pair is
+unchanged, the tick is a no-op — no write transaction fires. Otherwise
+the new value is upserted. The tracker doesn't model
+playing/paused/buffering state itself; the dedup naturally falls out of
+"did the playhead actually move?". That means:
 
 - **Paused:** ticks keep firing, but `time-pos` doesn't move, so the
-  saved position just keeps getting overwritten with the same value.
-- **Scrubbed:** the next tick picks up the new position and saves it.
+  bit-fingerprint matches and no redb write happens. A multi-hour pause
+  costs zero writes.
+- **Scrubbed:** the next tick picks up the new position, the
+  fingerprint differs, a single write fires.
 - **Buffering / not yet loaded:** mpv returns `null` for `time-pos`, and
-  the tracker silently skips that tick — no overwrite happens.
+  the tracker silently skips that tick — no write happens.
+
+The comparison uses `f64::to_bits` equality, not a floating-point
+tolerance. We only skip if mpv reported the identical float — not an
+"approximately same" value — which sidesteps any question of what
+counts as a meaningful move. During normal playback `time-pos` advances
+by roughly the tick interval between samples, so bit equality never
+false-positive skips a real update.
 
 When mpv exits normally, rstube takes one final snapshot and writes the
 last known position and the full history entry. When mpv dies

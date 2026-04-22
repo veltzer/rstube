@@ -43,7 +43,7 @@ enum Focus {
 }
 
 pub const MIN_PARTIAL_SECS: f64 = 10.0;
-pub const PARTIAL_TAIL_MARGIN_SECS: f64 = 10.0;
+pub const PARTIAL_TAIL_MARGIN_SECS: f64 = 30.0;
 
 /// A session is "partial" if it was watched at least `MIN_PARTIAL_SECS` in
 /// and ended more than `PARTIAL_TAIL_MARGIN_SECS` before the end.
@@ -134,14 +134,17 @@ fn synthetic_entry_from_position(video_id: &str, pos: &state::Position) -> Histo
     }
 }
 
-/// History entries eligible as "partial": most recent partially-watched
-/// session per video. Unions history-derived entries with positions.redb so a
-/// session that never got a history line (older binary, or the tracker wrote
-/// positions but the phase-1 history line was lost) still shows up.
-pub fn partial_candidates() -> Vec<HistoryEntry> {
+/// Most-recent meaningful session per video, across the entire history plus
+/// positions.redb. "Meaningful" = `position_on_exit ≥ MIN_PARTIAL_SECS` —
+/// trivial 0-second phase-1 rows and accidental reopens never win.
+///
+/// Returns one entry per video. Classify each with `is_finished`/`is_partial`
+/// to bucket them — this ensures a video appears in exactly one of the two
+/// lists, based on its most recent real session.
+fn latest_session_per_video() -> Vec<HistoryEntry> {
     let mut by_id: HashMap<String, HistoryEntry> = HashMap::new();
     for e in state::load_all_history() {
-        if !is_partial(&e) {
+        if e.position_on_exit < MIN_PARTIAL_SECS {
             continue;
         }
         by_id
@@ -153,11 +156,12 @@ pub fn partial_candidates() -> Vec<HistoryEntry> {
             })
             .or_insert(e);
     }
+    // Fall back to positions.redb for videos with no usable history row.
     for (video_id, pos) in state::load_positions() {
         if by_id.contains_key(&video_id) {
             continue;
         }
-        if matches!(position_classify(&pos), PositionClass::Partial) {
+        if !matches!(position_classify(&pos), PositionClass::Trivial) {
             by_id.insert(
                 video_id.clone(),
                 synthetic_entry_from_position(&video_id, &pos),
@@ -169,38 +173,17 @@ pub fn partial_candidates() -> Vec<HistoryEntry> {
     out
 }
 
-/// History entries that count as "finished": most recent finished session
-/// per video. Also unions with positions.redb for parity with
-/// `partial_candidates`.
+/// Videos whose most recent session is classified as "partial" — not yet
+/// watched past the tail margin. Sorted newest-first.
+pub fn partial_candidates() -> Vec<HistoryEntry> {
+    latest_session_per_video().into_iter().filter(is_partial).collect()
+}
+
+/// Videos whose most recent session is classified as "finished" — watched
+/// through to within `PARTIAL_TAIL_MARGIN_SECS` of the end. Sorted
+/// newest-first.
 pub fn finished_candidates() -> Vec<HistoryEntry> {
-    let mut by_id: HashMap<String, HistoryEntry> = HashMap::new();
-    for e in state::load_all_history() {
-        if !is_finished(&e) {
-            continue;
-        }
-        by_id
-            .entry(e.video_id.clone())
-            .and_modify(|existing| {
-                if e.ts_end > existing.ts_end {
-                    *existing = e.clone();
-                }
-            })
-            .or_insert(e);
-    }
-    for (video_id, pos) in state::load_positions() {
-        if by_id.contains_key(&video_id) {
-            continue;
-        }
-        if matches!(position_classify(&pos), PositionClass::Finished) {
-            by_id.insert(
-                video_id.clone(),
-                synthetic_entry_from_position(&video_id, &pos),
-            );
-        }
-    }
-    let mut out: Vec<HistoryEntry> = by_id.into_values().collect();
-    out.sort_by(|a, b| b.ts_end.cmp(&a.ts_end));
-    out
+    latest_session_per_video().into_iter().filter(is_finished).collect()
 }
 
 /// Picker over playlist items. Caller decides what to include (e.g. unseen-only

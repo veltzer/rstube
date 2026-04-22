@@ -190,6 +190,10 @@ fn spawn_tracker(
         let mut last_persist = Instant::now()
             .checked_sub(Duration::from_secs(POLL_INTERVAL_SECS))
             .unwrap_or_else(Instant::now);
+        // Bit-equality of the last-persisted (pos, dur) pair. Used to skip
+        // redundant writes when mpv is paused (time-pos doesn't move) or
+        // when a tick happens to fall on the same millisecond as the last.
+        let mut last_written: Option<(u64, Option<u64>)> = None;
 
         while !stop.load(Ordering::SeqCst) {
             if last_persist.elapsed() >= Duration::from_secs(POLL_INTERVAL_SECS) {
@@ -209,14 +213,18 @@ fn spawn_tracker(
                 let snapshot = latest.lock().unwrap().clone();
                 if let (Some(pos), dur) = snapshot {
                     *last_pos.lock().unwrap() = Some((pos, dur));
-                    let _ = state::upsert_position(
-                        &key,
-                        Position {
-                            position_secs: pos,
-                            duration_secs: dur,
-                            updated_at: state::now_secs(),
-                        },
-                    );
+                    let fingerprint = (pos.to_bits(), dur.map(f64::to_bits));
+                    if last_written != Some(fingerprint) {
+                        let _ = state::upsert_position(
+                            &key,
+                            Position {
+                                position_secs: pos,
+                                duration_secs: dur,
+                                updated_at: state::now_secs(),
+                            },
+                        );
+                        last_written = Some(fingerprint);
+                    }
                 }
                 last_persist = Instant::now();
             }

@@ -5,6 +5,7 @@
 - [Getting Started](getting-started.md)
 - [Commands](commands.md)
 - [Playlists](playlists.md)
+- [Videos](videos.md)
 - [Watch history and resume](history.md)
 - [Playlist cache](cache.md)
 - [Shell completion](completion.md)

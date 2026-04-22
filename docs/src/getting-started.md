@@ -43,7 +43,7 @@ rstube play partial
 ```
 
 Shows videos in your watch history where you're partway through (at least
-10 seconds in, and not within 10 seconds of the end). Enter resumes at
+10 seconds in, and not within 30 seconds of the end). Enter resumes at
 your last position.
 
 ## 4. Browse anything
@@ -64,6 +64,9 @@ playlist a video was in.
   refetches from YouTube.
 - `rstube playlists fetch` pre-warms the cache for all configured
   playlists. Nice as a cron/systemd-timer job.
+- `rstube videos add <name> <url-or-id>` bookmarks a single video so it
+  shows up in `play new`, `play any`, and `show new` alongside your
+  playlists. See [Videos](videos.md).
 - In any picker: `/` to filter, `a` to toggle audio-only playback, `d` to
   delete the current row from history, `q` to quit.
 - Pass `-v` / `--verbose` to any `play` subcommand to see mpv's terminal

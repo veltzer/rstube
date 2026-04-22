@@ -9,10 +9,18 @@ pub struct NamedPlaylist {
     pub url: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NamedVideo {
+    pub name: String,
+    pub video_id: String,
+}
+
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct Config {
     #[serde(default)]
     pub playlists: Vec<NamedPlaylist>,
+    #[serde(default)]
+    pub videos: Vec<NamedVideo>,
     /// Legacy single-playlist field. Migrated into `playlists` on load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub playlist_url: Option<String>,
@@ -60,6 +68,40 @@ pub fn save(cfg: &Config) -> Result<()> {
     fs::rename(&tmp, &path)
         .with_context(|| format!("failed to rename into {}", path.display()))?;
     Ok(())
+}
+
+/// Accept a YouTube video id in any of the common shapes and return the bare
+/// 11-char id. Accepts:
+///   - full watch URL: https://www.youtube.com/watch?v=<id>[&...]
+///   - youtu.be short URL: https://youtu.be/<id>[?...]
+///   - bare 11-char id
+pub fn normalize_video_id(input: &str) -> Result<String> {
+    let s = input.trim();
+    if s.is_empty() {
+        bail!("empty video reference");
+    }
+
+    let candidate = if let Some(rest) = s.split_once("v=").map(|(_, r)| r) {
+        rest.split(&['&', '#'][..]).next().unwrap_or("").to_owned()
+    } else if let Some(rest) = s.strip_prefix("https://youtu.be/")
+        .or_else(|| s.strip_prefix("http://youtu.be/"))
+    {
+        rest.split(&['?', '#', '/'][..]).next().unwrap_or("").to_owned()
+    } else if s.starts_with("http://") || s.starts_with("https://") {
+        bail!("URL does not look like a YouTube watch URL: {s}");
+    } else {
+        s.to_owned()
+    };
+
+    if candidate.len() != 11
+        || !candidate.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        bail!(
+            "not a valid YouTube video id: {candidate:?} \
+             (expected 11 chars of [A-Za-z0-9_-])"
+        );
+    }
+    Ok(candidate)
 }
 
 /// Accept either a full playlist URL or a bare playlist id (PL..., UU..., OLAK5uy...).

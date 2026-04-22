@@ -5,13 +5,14 @@ Top-level commands in `rstube`.
 | Command | Description |
 |---|---|
 | `rstube play partial [-v]` | Pick a partially-watched video from history |
-| `rstube play new [--refresh] [--pick] [-v]` | Pick an unwatched video from a configured playlist |
-| `rstube play any [--refresh] [-v]` | Pick any video across all configured playlists |
+| `rstube play new [--refresh] [--pick] [-v]` | Pick an unwatched video from a configured playlist or video |
+| `rstube play any [--refresh] [-v]` | Pick any video across all configured playlists and videos |
 | `rstube show finished` | Print videos watched to the end |
 | `rstube show partial` | Print videos partially watched (same set as `play partial`) |
-| `rstube show new [--refresh]` | Print videos in playlists you haven't started |
+| `rstube show new [--refresh]` | Print videos in your playlists/videos list that you haven't started |
 | `rstube history [-n N]` | Show the last N history entries (default 20) |
 | `rstube playlists ...` | Manage configured playlists (see [Playlists](playlists.md)) |
+| `rstube videos ...` | Manage individually configured videos (see [Videos](videos.md)) |
 | `rstube install-deps` | Install missing `mpv` / `yt-dlp` |
 | `rstube complete <shell>` | Print shell completion script |
 | `rstube version` | Print build info (git sha, rustc, build time) |
@@ -21,24 +22,25 @@ Top-level commands in `rstube`.
 ### `play partial`
 
 Opens the partial picker with partially-watched videos — defined as any
-history entry where the saved position is ≥ 10 seconds and more than 10
+history entry where the saved position is ≥ 10 seconds and more than 30
 seconds before the end. If there are no such entries, prints a clear
 message and exits.
 
 ### `play new`
 
-- Scans configured playlists in order; opens the picker on the first one
-  with any unseen video.
-- `--pick` — open a playlist chooser TUI first and use whichever you
-  select.
-- `--refresh` — bypass the 24h cache and refetch the playlist(s) being
-  used.
-- If *every* configured playlist has zero unseen items, prints a message
-  and exits.
+- Scans configured playlists in order, then the videos list; opens the
+  picker on the first source with any unseen video.
+- `--pick` — open a chooser TUI first listing every playlist plus a
+  final "videos" bucket for individually-configured videos. Select the
+  one you want.
+- `--refresh` — bypass the 24h cache and refetch whichever source is
+  being used.
+- If every playlist and the videos list have zero unseen items, prints a
+  message and exits.
 
 ### `play any`
 
-- Merges every video from every configured playlist into one picker
+- Merges every video from every configured playlist and every configured video into one picker
   (deduplicated by video id).
 - Does *not* filter by watch history — useful for rewatching.
 - `--refresh` — bypass the cache.
@@ -74,9 +76,9 @@ in, >10s before the end).
 
 ### `show new`
 
-Every video across all configured playlists that isn't yet in your
-history. Uses the playlist cache by default; pass `--refresh` to
-refetch. Format:
+Every video across all configured playlists and individually configured
+videos that isn't yet in your history. Uses the 24h cache by default;
+pass `--refresh` to refetch. Format:
 
 ```
 [duration] title

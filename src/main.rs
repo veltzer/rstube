@@ -41,6 +41,11 @@ enum Commands {
         #[command(subcommand)]
         action: PlaylistsAction,
     },
+    /// Manage individually configured YouTube videos (merged into play/show pools)
+    Videos {
+        #[command(subcommand)]
+        action: VideosAction,
+    },
     /// Generate shell completion scripts
     Complete {
         /// Shell to generate completions for (bash, zsh, fish, elvish, powershell)
@@ -114,6 +119,23 @@ enum PlaylistsAction {
     },
 }
 
+#[derive(Subcommand)]
+enum VideosAction {
+    /// Add a single video under a short name (url or 11-char video id)
+    Add { name: String, url_or_id: String },
+    /// Remove a configured video by name
+    Remove { name: String },
+    /// List configured videos in order
+    List,
+    /// Print a single configured video's id by name
+    Show { name: String },
+    /// Fetch title+duration from YouTube and update the local cache
+    Fetch {
+        /// Video name to fetch (omit to fetch all configured videos)
+        name: Option<String>,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -125,6 +147,7 @@ fn main() -> Result<()> {
         Commands::Play { action } => run_play(action),
         Commands::Show { action } => run_show(action),
         Commands::Playlists { action } => run_playlists(action),
+        Commands::Videos { action } => run_videos(action),
         Commands::Complete { shell } => {
             print_completions(shell);
             Ok(())
@@ -168,9 +191,10 @@ const PLAYLIST_CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 /// or every playlist is empty.
 fn load_merged_playlists(refresh: bool) -> Result<Vec<playlist::PlaylistItem>> {
     let cfg = config::load();
-    if cfg.playlists.is_empty() {
+    if cfg.playlists.is_empty() && cfg.videos.is_empty() {
         bail!(
-            "no playlists configured — add one with `rstube playlists add <name> <url-or-id>` \
+            "nothing configured — add a playlist with `rstube playlists add <name> <url-or-id>` \
+             or a single video with `rstube videos add <name> <url-or-id>` \
              (config: {})",
             config::config_path().display()
         );
@@ -185,8 +209,22 @@ fn load_merged_playlists(refresh: bool) -> Result<Vec<playlist::PlaylistItem>> {
             }
         }
     }
+    for v in &cfg.videos {
+        if seen_ids.contains(&v.video_id) {
+            continue;
+        }
+        match load_configured_video(&v.video_id, refresh) {
+            Ok(item) => {
+                seen_ids.insert(item.id.clone());
+                merged.push(item);
+            }
+            Err(e) => {
+                eprintln!("warning: skipping configured video \"{}\": {e}", v.name);
+            }
+        }
+    }
     if merged.is_empty() {
-        bail!("all configured playlists are empty");
+        bail!("all configured playlists and videos are empty");
     }
     Ok(merged)
 }
@@ -212,29 +250,47 @@ fn run_play_any(refresh: bool, verbose: bool) -> Result<()> {
 
 fn run_play_new(refresh: bool, pick: bool, verbose: bool) -> Result<()> {
     let cfg = config::load();
-    if cfg.playlists.is_empty() {
+    if cfg.playlists.is_empty() && cfg.videos.is_empty() {
         bail!(
-            "no playlists configured — add one with `rstube playlists add <name> <url-or-id>` \
+            "nothing configured — add a playlist with `rstube playlists add <name> <url-or-id>` \
+             or a single video with `rstube videos add <name> <url-or-id>` \
              (config: {})",
             config::config_path().display()
         );
     }
 
     let seen = state::played_video_ids();
+    // Scannable sources: each configured playlist is one, then a synthetic
+    // "videos" bucket holding all individually-configured videos.
+    let video_bucket_name = "videos";
+    let has_videos = !cfg.videos.is_empty();
 
     let (chosen_name, unseen) = if pick {
-        let names: Vec<String> = cfg.playlists.iter().map(|p| p.name.clone()).collect();
-        let Some(idx) = tui::run_playlist_chooser(names)? else {
+        let mut names: Vec<String> = cfg.playlists.iter().map(|p| p.name.clone()).collect();
+        if has_videos {
+            names.push(video_bucket_name.to_owned());
+        }
+        let Some(idx) = tui::run_playlist_chooser(names.clone())? else {
             return Ok(());
         };
-        let pl = &cfg.playlists[idx];
-        let items = load_playlist_items(&pl.url, refresh)?;
-        let unseen = filter_unseen(items, &seen);
-        if unseen.is_empty() {
-            eprintln!("No new videos in playlist \"{}\".", pl.name);
-            return Ok(());
+        if idx < cfg.playlists.len() {
+            let pl = &cfg.playlists[idx];
+            let items = load_playlist_items(&pl.url, refresh)?;
+            let unseen = filter_unseen(items, &seen);
+            if unseen.is_empty() {
+                eprintln!("No new videos in playlist \"{}\".", pl.name);
+                return Ok(());
+            }
+            (pl.name.clone(), unseen)
+        } else {
+            let items = load_configured_videos(&cfg.videos, refresh);
+            let unseen = filter_unseen(items, &seen);
+            if unseen.is_empty() {
+                eprintln!("No new videos in the videos list.");
+                return Ok(());
+            }
+            (video_bucket_name.to_owned(), unseen)
         }
-        (pl.name.clone(), unseen)
     } else {
         let mut found: Option<(String, Vec<playlist::PlaylistItem>)> = None;
         for pl in &cfg.playlists {
@@ -246,9 +302,18 @@ fn run_play_new(refresh: bool, pick: bool, verbose: bool) -> Result<()> {
             }
             eprintln!("Playlist \"{}\": no new videos, skipping.", pl.name);
         }
+        if found.is_none() && has_videos {
+            let items = load_configured_videos(&cfg.videos, refresh);
+            let unseen = filter_unseen(items, &seen);
+            if !unseen.is_empty() {
+                found = Some((video_bucket_name.to_owned(), unseen));
+            } else {
+                eprintln!("Videos list: no new videos, skipping.");
+            }
+        }
         let Some(found) = found else {
-            eprintln!("No new videos in any configured playlist.");
-            eprintln!("(try `rstube play new --refresh` to refetch, or `--pick` to choose a playlist)");
+            eprintln!("No new videos in any configured playlist or videos list.");
+            eprintln!("(try `rstube play new --refresh` to refetch, or `--pick` to choose a source)");
             return Ok(());
         };
         found
@@ -383,43 +448,189 @@ fn print_completions(shell: Shell) {
     }
 }
 
-/// Inject bash completion for playlist names on `playlists show` and
-/// `playlists remove`. Names are read from the config TOML at tab time.
+/// Inject bash completion for configured playlist/video names. Names are
+/// read from the config TOML at tab time, scoped by section so
+/// `playlists show <TAB>` only suggests playlist names and `videos show <TAB>`
+/// only suggests video names.
 fn inject_bash_playlist_completions(script: &str) -> String {
     let helper = r#"
-_rstube_playlist_names() {
+_rstube_names_in_section() {
+    # args: $1 = section name (without brackets), e.g. "playlists" or "videos"
     local cfg="${RSTUBE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/rstube}/config.toml"
     [[ -f "$cfg" ]] || return
-    # Match: name = "foo"  inside a [[playlists]] table. Conservative: any
-    # line matching `name = "..."` will be emitted. There are no other
-    # string fields named `name` in the schema, so this is safe.
-    grep -E '^\s*name\s*=\s*"' "$cfg" | sed -E 's/^\s*name\s*=\s*"([^"]*)".*/\1/'
+    awk -v want="[[$1]]" '
+        /^\[\[/ { in_section = ($0 == want); next }
+        /^\[/   { in_section = 0; next }
+        in_section && $1 == "name" {
+            match($0, /"[^"]*"/)
+            if (RSTART > 0) print substr($0, RSTART+1, RLENGTH-2)
+        }
+    ' "$cfg"
 }
+_rstube_playlist_names() { _rstube_names_in_section playlists; }
+_rstube_video_names()    { _rstube_names_in_section videos; }
 "#;
 
-    let targets = [
+    let playlist_targets = [
         "rstube__subcmd__playlists__subcmd__show)",
         "rstube__subcmd__playlists__subcmd__remove)",
         "rstube__subcmd__playlists__subcmd__fetch)",
     ];
+    let video_targets = [
+        "rstube__subcmd__videos__subcmd__show)",
+        "rstube__subcmd__videos__subcmd__remove)",
+        "rstube__subcmd__videos__subcmd__fetch)",
+    ];
+
     let needle = "COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )";
-    let replacement = "if [[ ${cur} != -* ]] ; then\n                    COMPREPLY=( $(compgen -W \"$(_rstube_playlist_names)\" -- \"${cur}\") )\n                else\n                    COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )\n                fi";
+    let playlist_replacement = "if [[ ${cur} != -* ]] ; then\n                    COMPREPLY=( $(compgen -W \"$(_rstube_playlist_names)\" -- \"${cur}\") )\n                else\n                    COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )\n                fi";
+    let video_replacement = "if [[ ${cur} != -* ]] ; then\n                    COMPREPLY=( $(compgen -W \"$(_rstube_video_names)\" -- \"${cur}\") )\n                else\n                    COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )\n                fi";
 
     let mut result = script.to_string();
-    for target in &targets {
-        let Some(section_start) = result.find(target) else { continue };
-        let after_start = section_start + target.len();
-        let section_len = result[after_start..]
-            .find("\n        rstube__subcmd__")
-            .unwrap_or(result.len() - after_start);
-        let section_end = after_start + section_len;
-        let section_slice = &result[section_start..section_end];
-        if let Some(rel_pos) = section_slice.find(needle) {
-            let abs_pos = section_start + rel_pos;
-            result.replace_range(abs_pos..abs_pos + needle.len(), replacement);
+    for (targets, replacement) in [
+        (&playlist_targets[..], playlist_replacement),
+        (&video_targets[..], video_replacement),
+    ] {
+        for target in targets {
+            let Some(section_start) = result.find(target) else { continue };
+            let after_start = section_start + target.len();
+            let section_len = result[after_start..]
+                .find("\n        rstube__subcmd__")
+                .unwrap_or(result.len() - after_start);
+            let section_end = after_start + section_len;
+            let section_slice = &result[section_start..section_end];
+            if let Some(rel_pos) = section_slice.find(needle) {
+                let abs_pos = section_start + rel_pos;
+                result.replace_range(abs_pos..abs_pos + needle.len(), replacement);
+            }
         }
     }
     format!("{helper}{result}")
+}
+
+fn run_videos(action: VideosAction) -> Result<()> {
+    match action {
+        VideosAction::Add { name, url_or_id } => {
+            let video_id = config::normalize_video_id(&url_or_id)?;
+            let mut cfg = config::load();
+            if cfg.videos.iter().any(|v| v.name == name) {
+                bail!("video named \"{name}\" already exists");
+            }
+            cfg.videos.push(config::NamedVideo { name: name.clone(), video_id: video_id.clone() });
+            config::save(&cfg)?;
+            println!("added \"{name}\" → {video_id}");
+            println!("(stored in {})", config::config_path().display());
+            Ok(())
+        }
+        VideosAction::Remove { name } => {
+            let mut cfg = config::load();
+            let before = cfg.videos.len();
+            cfg.videos.retain(|v| v.name != name);
+            if cfg.videos.len() == before {
+                bail!("no video named \"{name}\"");
+            }
+            config::save(&cfg)?;
+            println!("removed \"{name}\"");
+            Ok(())
+        }
+        VideosAction::List => {
+            let cfg = config::load();
+            if cfg.videos.is_empty() {
+                println!("(no videos configured)");
+                println!("(config path: {})", config::config_path().display());
+                return Ok(());
+            }
+            for (i, v) in cfg.videos.iter().enumerate() {
+                println!("{:>2}. {}  {}", i + 1, v.name, v.video_id);
+            }
+            Ok(())
+        }
+        VideosAction::Show { name } => {
+            let cfg = config::load();
+            let Some(v) = cfg.videos.iter().find(|v| v.name == name) else {
+                bail!("no video named \"{name}\"");
+            };
+            println!("{}", v.video_id);
+            Ok(())
+        }
+        VideosAction::Fetch { name } => {
+            let cfg = config::load();
+            if cfg.videos.is_empty() {
+                bail!("no videos configured — add one with `rstube videos add <name> <url-or-id>`");
+            }
+            let targets: Vec<&config::NamedVideo> = match name {
+                Some(n) => {
+                    let Some(v) = cfg.videos.iter().find(|v| v.name == n) else {
+                        bail!("no video named \"{n}\"");
+                    };
+                    vec![v]
+                }
+                None => cfg.videos.iter().collect(),
+            };
+            ensure_tool("yt-dlp")?;
+            for v in targets {
+                let item = fetch_video_and_cache(&v.video_id)?;
+                let dur = item.duration.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+                let title = item.title.as_deref().unwrap_or(&v.video_id);
+                println!("{}: [{dur}] {title}", v.name);
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Synthetic cache URL used to store a single video's metadata inside the
+/// existing playlist cache. Keeps the cache format uniform.
+fn video_cache_key(video_id: &str) -> String {
+    format!("rstube:video:{video_id}")
+}
+
+/// Fetch a single video via yt-dlp and write to the playlist cache under the
+/// synthetic key. Returns the fetched metadata.
+fn fetch_video_and_cache(video_id: &str) -> Result<playlist::PlaylistItem> {
+    let item = playlist::fetch_video(video_id)
+        .with_context(|| format!("failed to fetch video {video_id}"))?;
+    let key = video_cache_key(video_id);
+    if let Err(e) = state::save_playlist_cache(&key, std::slice::from_ref(&item)) {
+        eprintln!("warning: failed to save video cache: {e}");
+    }
+    Ok(item)
+}
+
+/// Resolve all configured videos into `PlaylistItem`s, preserving config
+/// order. Individual fetch failures are printed as warnings and the offending
+/// video is skipped — one broken entry shouldn't hide the rest.
+fn load_configured_videos(
+    videos: &[config::NamedVideo],
+    refresh: bool,
+) -> Vec<playlist::PlaylistItem> {
+    let mut out = Vec::with_capacity(videos.len());
+    for v in videos {
+        match load_configured_video(&v.video_id, refresh) {
+            Ok(item) => out.push(item),
+            Err(e) => eprintln!("warning: skipping configured video \"{}\": {e}", v.name),
+        }
+    }
+    out
+}
+
+/// Load a single configured video's metadata — from cache if fresh, else
+/// refetch via yt-dlp and refresh the cache. Respects the same 24h TTL as
+/// playlists; `refresh=true` bypasses.
+fn load_configured_video(video_id: &str, refresh: bool) -> Result<playlist::PlaylistItem> {
+    let key = video_cache_key(video_id);
+    if !refresh {
+        if let Some(entry) = state::load_playlist_cache(&key) {
+            if state::now_secs().saturating_sub(entry.fetched_at) < PLAYLIST_CACHE_TTL_SECS {
+                if let Some(item) = entry.items.into_iter().next() {
+                    return Ok(item);
+                }
+            }
+        }
+    }
+    ensure_tool("yt-dlp")?;
+    eprintln!("Fetching video metadata for {video_id}…");
+    fetch_video_and_cache(video_id)
 }
 
 fn run_show(action: ShowAction) -> Result<()> {
