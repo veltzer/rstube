@@ -27,6 +27,30 @@ per video, not the most recent session overall.
   useful if a video gets stuck in a partially-watched state you don't
   want to resume.
 
+## Crash and power-loss safety
+
+You will not lose your position if mpv crashes, your terminal is killed,
+or your laptop runs out of battery mid-video.
+
+While mpv is playing, a background thread polls the current position over
+mpv's IPC socket every 30 seconds and writes it to `positions.json`. The
+write is atomic (tmp-then-rename), so even a power cut mid-write cannot
+corrupt the file — you end up with either the previous snapshot or the
+new one, never a partial.
+
+Worst case: you lose **up to 30 seconds** of progress — the time since
+the last tick. `rstube play resume` will still show the video, and it
+will start where the last tick landed.
+
+There's one narrow exception: if playback is killed within the first 30
+seconds of starting, no tick has happened yet, so nothing new is saved.
+Any *previous* saved position for that video is left untouched — you'd
+resume from there, not from zero.
+
+Note that `history.jsonl` is only appended on a clean mpv exit, so a
+session that ended via crash or power loss will not appear in `rstube
+history`. The saved position is still there, so `play resume` works.
+
 ## Storage
 
 - `$RSTUBE_STATE_DIR/positions.json` (or `$XDG_STATE_HOME/rstube/...`)
