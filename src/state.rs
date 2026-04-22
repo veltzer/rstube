@@ -129,6 +129,22 @@ pub fn path_exists(p: &Path) -> bool {
     p.exists()
 }
 
+/// Set of every video_id that appears in history.jsonl, regardless of how far
+/// it was watched. "Strict" notion of played: any session at all counts.
+pub fn played_video_ids() -> std::collections::HashSet<String> {
+    let path = history_path();
+    let Ok(contents) = fs::read_to_string(&path) else { return std::collections::HashSet::new(); };
+    let mut ids = std::collections::HashSet::new();
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        if let Ok(entry) = serde_json::from_str::<HistoryEntry>(line) {
+            ids.insert(entry.video_id);
+        }
+    }
+    ids
+}
+
 /// Load all history records, deduplicate by video_id keeping the most recent
 /// session, and return them sorted newest-first. Silently skips malformed lines.
 pub fn load_history_deduped() -> Vec<HistoryEntry> {

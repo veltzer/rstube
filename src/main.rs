@@ -1,4 +1,6 @@
+mod config;
 mod mpv;
+mod playlist;
 mod state;
 mod tui;
 
@@ -23,10 +25,25 @@ enum Commands {
         #[arg(short = 'n', long, default_value_t = 20)]
         limit: usize,
     },
-    /// Open TUI picker to resume a previously played video
+    /// Open TUI picker to resume an in-progress video from history
     Resume,
+    /// Open TUI picker to play a never-before-watched video from the playlist
+    Playnew,
+    /// Manage the configured YouTube playlist (used by `playnew`)
+    Playlist {
+        #[command(subcommand)]
+        action: PlaylistAction,
+    },
     /// Print full build/version info (git sha, rustc, build time)
     Version,
+}
+
+#[derive(Subcommand)]
+enum PlaylistAction {
+    /// Set the playlist URL or bare playlist id
+    Set { url_or_id: String },
+    /// Print the configured playlist
+    Show,
 }
 
 fn main() -> Result<()> {
@@ -38,11 +55,13 @@ fn main() -> Result<()> {
         }
         Commands::History { limit } => show_history(limit),
         Commands::Resume => run_resume(),
+        Commands::Playnew => run_playnew(),
+        Commands::Playlist { action } => run_playlist(action),
     }
 }
 
 fn run_resume() -> Result<()> {
-    let Some(sel) = tui::run_picker()? else {
+    let Some(sel) = tui::run_resume_picker()? else {
         return Ok(());
     };
     ensure_tool("mpv")?;
@@ -52,6 +71,58 @@ fn run_resume() -> Result<()> {
         duration_secs: sel.duration_secs,
         audio_only: sel.audio_only,
     })
+}
+
+fn run_playnew() -> Result<()> {
+    let cfg = config::load();
+    let Some(url) = cfg.playlist_url else {
+        bail!(
+            "no playlist configured — set one with `rstube playlist set <url-or-id>` \
+             (config: {})",
+            config::config_path().display()
+        );
+    };
+    ensure_tool("yt-dlp")?;
+    eprintln!("Fetching playlist…");
+    let items = playlist::fetch(&url)?;
+    if items.is_empty() {
+        bail!("playlist returned no items: {url}");
+    }
+    let Some(sel) = tui::run_playnew_picker(items)? else {
+        return Ok(());
+    };
+    ensure_tool("mpv")?;
+    mpv::play(mpv::PlayRequest {
+        url: &sel.url,
+        title: sel.title.as_deref(),
+        duration_secs: sel.duration_secs,
+        audio_only: sel.audio_only,
+    })
+}
+
+fn run_playlist(action: PlaylistAction) -> Result<()> {
+    match action {
+        PlaylistAction::Set { url_or_id } => {
+            let url = config::normalize_playlist(&url_or_id)?;
+            let mut cfg = config::load();
+            cfg.playlist_url = Some(url.clone());
+            config::save(&cfg)?;
+            println!("playlist set to {url}");
+            println!("(stored in {})", config::config_path().display());
+            Ok(())
+        }
+        PlaylistAction::Show => {
+            let cfg = config::load();
+            match cfg.playlist_url {
+                Some(url) => println!("{url}"),
+                None => {
+                    println!("(no playlist configured)");
+                    println!("(config path: {})", config::config_path().display());
+                }
+            }
+            Ok(())
+        }
+    }
 }
 
 fn show_history(limit: usize) -> Result<()> {

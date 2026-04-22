@@ -13,6 +13,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use std::io::{Stdout, stdout};
 use std::time::Duration;
 
+use crate::playlist::PlaylistItem;
 use crate::state::{self, HistoryEntry};
 
 pub struct Selection {
@@ -22,19 +23,78 @@ pub struct Selection {
     pub audio_only: bool,
 }
 
+/// Generic row for the picker. Either source (history or playlist) maps into
+/// this; the picker doesn't care where items came from.
+pub struct PickerRow {
+    pub video_id: String,
+    pub url: String,
+    pub title: Option<String>,
+    pub duration_secs: Option<f64>,
+    /// Position in seconds if this item has watch progress, else None.
+    pub position_secs: Option<f64>,
+    /// Unix timestamp of last play, if any. 0 for never.
+    pub last_played: u64,
+}
+
 enum Focus {
     List,
     Filter,
 }
 
-pub fn run_picker() -> Result<Option<Selection>> {
-    let mut entries = state::load_history_deduped();
-    if entries.is_empty() {
+const MIN_RESUME_SECS: f64 = 10.0;
+const RESUME_TAIL_MARGIN_SECS: f64 = 10.0;
+
+fn is_in_progress(e: &HistoryEntry) -> bool {
+    if e.position_on_exit < MIN_RESUME_SECS {
+        return false;
+    }
+    match e.duration_secs {
+        Some(d) if d > 0.0 => e.position_on_exit < d - RESUME_TAIL_MARGIN_SECS,
+        _ => true,
+    }
+}
+
+/// Resume picker: in-progress history entries.
+pub fn run_resume_picker() -> Result<Option<Selection>> {
+    let rows: Vec<PickerRow> = state::load_history_deduped()
+        .into_iter()
+        .filter(is_in_progress)
+        .map(|e| PickerRow {
+            video_id: e.video_id,
+            url: e.url,
+            title: e.title,
+            duration_secs: e.duration_secs,
+            position_secs: Some(e.position_on_exit),
+            last_played: e.ts_end,
+        })
+        .collect();
+    run(rows, "resume")
+}
+
+/// Playnew picker: playlist items never appearing in history.
+pub fn run_playnew_picker(items: Vec<PlaylistItem>) -> Result<Option<Selection>> {
+    let seen = state::played_video_ids();
+    let rows: Vec<PickerRow> = items
+        .into_iter()
+        .filter(|it| !seen.contains(&it.id))
+        .map(|it| PickerRow {
+            url: it.url(),
+            video_id: it.id,
+            title: it.title,
+            duration_secs: it.duration,
+            position_secs: None,
+            last_played: 0,
+        })
+        .collect();
+    run(rows, "playnew")
+}
+
+fn run(rows: Vec<PickerRow>, label: &str) -> Result<Option<Selection>> {
+    if rows.is_empty() {
         return Ok(None);
     }
-
     let mut terminal = setup_terminal().context("failed to init terminal")?;
-    let result = main_loop(&mut terminal, &mut entries);
+    let result = main_loop(&mut terminal, rows, label);
     restore_terminal(&mut terminal)?;
     result
 }
@@ -56,7 +116,8 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result
 
 fn main_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    entries: &mut Vec<HistoryEntry>,
+    mut rows: Vec<PickerRow>,
+    label: &str,
 ) -> Result<Option<Selection>> {
     let mut filter = String::new();
     let mut focus = Focus::List;
@@ -65,7 +126,7 @@ fn main_loop(
     let mut audio_only = false;
 
     loop {
-        let filtered = filter_entries(entries, &filter);
+        let filtered = filter_rows(&rows, &filter);
         if list_state.selected().unwrap_or(0) >= filtered.len() && !filtered.is_empty() {
             list_state.select(Some(filtered.len() - 1));
         }
@@ -75,7 +136,7 @@ fn main_loop(
             list_state.select(Some(0));
         }
 
-        terminal.draw(|f| draw(f, &filtered, &mut list_state, &filter, &focus, audio_only))?;
+        terminal.draw(|f| draw(f, &filtered, &mut list_state, &filter, &focus, audio_only, label))?;
 
         if !event::poll(Duration::from_millis(200))? {
             continue;
@@ -112,21 +173,21 @@ fn main_loop(
                 }
                 KeyCode::Char('d') => {
                     if let Some(idx) = list_state.selected()
-                        && let Some(entry) = filtered.get(idx)
+                        && let Some(row) = filtered.get(idx)
                     {
-                        let id = entry.video_id.clone();
-                        entries.retain(|e| e.video_id != id);
+                        let id = row.video_id.clone();
+                        rows.retain(|r| r.video_id != id);
                         let _ = remove_position(&id);
                     }
                 }
                 KeyCode::Enter => {
                     if let Some(idx) = list_state.selected()
-                        && let Some(entry) = filtered.get(idx)
+                        && let Some(row) = filtered.get(idx)
                     {
                         return Ok(Some(Selection {
-                            url: entry.url.clone(),
-                            title: entry.title.clone(),
-                            duration_secs: entry.duration_secs,
+                            url: row.url.clone(),
+                            title: row.title.clone(),
+                            duration_secs: row.duration_secs,
                             audio_only,
                         }));
                     }
@@ -137,7 +198,7 @@ fn main_loop(
     }
 }
 
-fn move_selection(state: &mut ListState, items: &[&HistoryEntry], delta: i32) {
+fn move_selection(state: &mut ListState, items: &[&PickerRow], delta: i32) {
     if items.is_empty() {
         return;
     }
@@ -147,15 +208,15 @@ fn move_selection(state: &mut ListState, items: &[&HistoryEntry], delta: i32) {
     state.select(Some(next as usize));
 }
 
-fn filter_entries<'a>(entries: &'a [HistoryEntry], filter: &str) -> Vec<&'a HistoryEntry> {
+fn filter_rows<'a>(rows: &'a [PickerRow], filter: &str) -> Vec<&'a PickerRow> {
     if filter.is_empty() {
-        return entries.iter().collect();
+        return rows.iter().collect();
     }
     let needle = filter.to_lowercase();
-    entries
+    rows
         .iter()
-        .filter(|e| {
-            let hay = e.title.as_deref().unwrap_or(&e.url).to_lowercase();
+        .filter(|r| {
+            let hay = r.title.as_deref().unwrap_or(&r.url).to_lowercase();
             hay.contains(&needle)
         })
         .collect()
@@ -169,11 +230,12 @@ fn remove_position(video_id: &str) -> Result<()> {
 
 fn draw(
     f: &mut ratatui::Frame,
-    items: &[&HistoryEntry],
+    items: &[&PickerRow],
     list_state: &mut ListState,
     filter: &str,
     focus: &Focus,
     audio_only: bool,
+    label: &str,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -192,8 +254,8 @@ fn draw(
     let filter_para = Paragraph::new(filter).block(filter_block);
     f.render_widget(filter_para, chunks[0]);
 
-    let list_items: Vec<ListItem> = items.iter().map(|e| ListItem::new(render_row(e))).collect();
-    let list_title = format!(" history — {} items ", items.len());
+    let list_items: Vec<ListItem> = items.iter().map(|r| ListItem::new(render_row(r))).collect();
+    let list_title = format!(" {label} — {} items ", items.len());
     let list = List::new(list_items)
         .block(Block::default().borders(Borders::ALL).title(list_title))
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
@@ -208,22 +270,24 @@ fn draw(
     f.render_widget(hints_para, chunks[2]);
 }
 
-fn render_row(e: &HistoryEntry) -> Line<'static> {
-    let age = format_age(e.ts_end);
-    let pos = fmt_dur(e.position_on_exit);
-    let dur = e.duration_secs.map(fmt_dur).unwrap_or_else(|| "--:--".into());
-    let pct = e.duration_secs
-        .filter(|d| *d > 0.0)
-        .map(|d| format!(" {:>3.0}%", 100.0 * e.position_on_exit / d))
-        .unwrap_or_default();
-    let title = e.title.clone().unwrap_or_else(|| e.url.clone());
+fn render_row(r: &PickerRow) -> Line<'static> {
+    let age = format_age(r.last_played);
+    let dur = r.duration_secs.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+    let progress = match r.position_secs {
+        Some(pos) => {
+            let pct = r.duration_secs
+                .filter(|d| *d > 0.0)
+                .map(|d| format!(" {:>3.0}%", 100.0 * pos / d))
+                .unwrap_or_default();
+            format!("[{}/{dur}{pct}] ", fmt_dur(pos))
+        }
+        None => format!("[{dur}] "),
+    };
+    let title = r.title.clone().unwrap_or_else(|| r.url.clone());
 
     Line::from(vec![
         Span::styled(format!("{age:>6} "), Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            format!("[{pos}/{dur}{pct}] "),
-            Style::default().fg(Color::Cyan),
-        ),
+        Span::styled(progress, Style::default().fg(Color::Cyan)),
         Span::raw(title),
     ])
 }
