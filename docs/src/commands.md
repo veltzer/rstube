@@ -7,7 +7,7 @@ Top-level commands in `rstube`.
 | `rstube play partial [-v]` | Pick a partially-watched video from history |
 | `rstube play new [--refresh] [--pick] [-v]` | Pick an unwatched video from a configured playlist or video |
 | `rstube play any [--refresh] [-v]` | Pick any video across all configured playlists and videos |
-| `rstube show finished` | Print videos watched to the end |
+| `rstube show finished [-d]` | Print videos watched to the end (`-d` adds timing/percentage) |
 | `rstube show partial` | Print videos partially watched (same set as `play partial`) |
 | `rstube show new [--refresh]` | Print videos in your playlists/videos list that you haven't started |
 | `rstube history [-n N]` | Show the last N history entries (default 20) |
@@ -61,18 +61,24 @@ Text-only siblings of the `play` pickers — same data, no TUI, pipeable.
 
 ### `show finished`
 
-Prints every video you've watched to within 10s of the end. One line per
-video, deduped by video id (most recent session kept), most recent
-first:
+Prints every video you've watched to within 30 seconds of the end. One
+line per video, deduped by video id (most recent session kept), most
+recent first. Default format is just id + title:
 
 ```
-[pos/dur (pct%)] title
+<id> <title>
+```
+
+Pass `-d` / `--details` to include timing and percentage:
+
+```
+[pos/dur (pct%)] <id> <title>
 ```
 
 ### `show partial`
 
 Same set of videos `play partial` would show — partially watched (≥10s
-in, >10s before the end).
+in, >30s before the end).
 
 ### `show new`
 

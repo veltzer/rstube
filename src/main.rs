@@ -91,7 +91,11 @@ enum PlayAction {
 #[derive(Subcommand)]
 enum ShowAction {
     /// List videos watched to (near) the end
-    Finished,
+    Finished {
+        /// Include timing/percentage (default: just id and title)
+        #[arg(short, long)]
+        details: bool,
+    },
     /// List videos partially watched — same set `play partial` offers
     Partial,
     /// List videos in configured playlists you haven't started yet
@@ -635,14 +639,19 @@ fn load_configured_video(video_id: &str, refresh: bool) -> Result<playlist::Play
 
 fn run_show(action: ShowAction) -> Result<()> {
     match action {
-        ShowAction::Finished => {
+        ShowAction::Finished { details } => {
             let entries = tui::finished_candidates();
             if entries.is_empty() {
                 println!("(no finished videos)");
                 return Ok(());
             }
             for e in &entries {
-                print_history_row(e);
+                if details {
+                    print_history_row(e);
+                } else {
+                    let title = e.title.as_deref().unwrap_or(&e.url);
+                    println!("{} {title}", e.video_id);
+                }
             }
             Ok(())
         }
