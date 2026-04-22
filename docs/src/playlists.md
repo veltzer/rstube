@@ -29,6 +29,13 @@ A "url-or-id" can be any of:
 - A URL with `list=...` and other junk: also fine
 - A bare playlist id: `PLABCDEF` → normalized into a canonical URL
 
+## No duplicates
+
+`playlists add` rejects a URL that's already configured under another
+name, even if you pass it in a different form (bare id vs full URL —
+both normalize to the same canonical URL). The identity is the
+canonical URL, not the name you choose.
+
 ## Ordering
 
 Playlists are stored as an ordered list. That order determines:

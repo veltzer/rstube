@@ -370,6 +370,13 @@ fn run_playlists(action: PlaylistsAction) -> Result<()> {
             if cfg.playlists.iter().any(|p| p.name == name) {
                 bail!("playlist named \"{name}\" already exists");
             }
+            if let Some(existing) = cfg.playlists.iter().find(|p| p.url == url) {
+                bail!(
+                    "playlist URL already configured as \"{}\" \
+                     — remove it first if you want to re-add",
+                    existing.name
+                );
+            }
             cfg.playlists.push(config::NamedPlaylist { name: name.clone(), url: url.clone() });
             config::save(&cfg)?;
             println!("added \"{name}\" → {url}");
@@ -513,6 +520,13 @@ fn run_videos(action: VideosAction) -> Result<()> {
             let mut cfg = config::load();
             if cfg.videos.iter().any(|v| v.name == name) {
                 bail!("video named \"{name}\" already exists");
+            }
+            if let Some(existing) = cfg.videos.iter().find(|v| v.video_id == video_id) {
+                bail!(
+                    "video id {video_id} already configured as \"{}\" \
+                     — remove it first if you want to re-add",
+                    existing.name
+                );
             }
             cfg.videos.push(config::NamedVideo {
                 name: name.clone(),

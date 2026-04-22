@@ -43,6 +43,25 @@ A "url-or-id" can be any of:
 - Short URL with `?t=...`: `https://youtu.be/gl2GaCDt8BE?t=178`
 - Bare 11-char id: `dQw4w9WgXcQ`
 
+## No duplicates
+
+rstube rejects a `videos add` if the **video id** is already configured
+under some name — even if you pass a different URL shape (short URL,
+watch URL, with or without `t=`). The 11-char id is the identity.
+Example error:
+
+```
+Error: video id dQw4w9WgXcQ already configured as "rick" —
+       remove it first if you want to re-add
+```
+
+To re-add (e.g. to change the offset), remove the existing entry first:
+
+```bash
+rstube videos remove rick
+rstube videos add rick "https://youtu.be/dQw4w9WgXcQ?t=90"
+```
+
 ## Start offsets
 
 If the URL includes a `t=...` query parameter, rstube extracts the
