@@ -669,7 +669,7 @@ fn run_show(action: ShowAction) -> Result<()> {
             for it in &unseen {
                 let title = it.title.as_deref().unwrap_or(&it.id);
                 let dur = it.duration.map(fmt_dur).unwrap_or_else(|| "--:--".into());
-                println!("[{dur}] {title}");
+                println!("[{dur}] {} {title}", it.id);
             }
             Ok(())
         }
@@ -685,7 +685,7 @@ fn print_history_row(entry: &state::HistoryEntry) {
         .filter(|d| *d > 0.0)
         .map(|d| format!(" ({:.0}%)", 100.0 * entry.position_on_exit / d))
         .unwrap_or_default();
-    println!("[{pos}/{dur}{pct}] {title}");
+    println!("[{pos}/{dur}{pct}] {} {title}", entry.video_id);
 }
 
 fn show_history(limit: usize) -> Result<()> {
@@ -719,7 +719,7 @@ fn show_history(limit: usize) -> Result<()> {
             .map(|d| format!(" ({:.0}%)", 100.0 * effective_pos / d))
             .unwrap_or_default();
         let marker = if unfinished { " [unclean exit]" } else { "" };
-        println!("[{pos}/{dur}{pct}] {title}{marker}");
+        println!("[{pos}/{dur}{pct}] {} {title}{marker}", entry.video_id);
     }
     Ok(())
 }
