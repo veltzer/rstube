@@ -26,18 +26,12 @@ enum Commands {
         #[arg(short = 'n', long, default_value_t = 20)]
         limit: usize,
     },
-    /// Open TUI picker to resume an in-progress video from history
-    Resume,
-    /// Open TUI picker to play a never-before-watched video from a playlist
-    Playnew {
-        /// Bypass the playlist cache and refetch from YouTube
-        #[arg(long)]
-        refresh: bool,
-        /// Open a chooser to select which playlist to use
-        #[arg(long)]
-        pick: bool,
+    /// Play videos: resume in-progress, pick a new one, or browse anything
+    Play {
+        #[command(subcommand)]
+        action: PlayAction,
     },
-    /// Manage the configured YouTube playlists (used by `playnew`)
+    /// Manage the configured YouTube playlists (used by `play new`)
     Playlists {
         #[command(subcommand)]
         action: PlaylistsAction,
@@ -49,6 +43,27 @@ enum Commands {
     },
     /// Print full build/version info (git sha, rustc, build time)
     Version,
+}
+
+#[derive(Subcommand)]
+enum PlayAction {
+    /// Pick an in-progress video from history to resume
+    Resume,
+    /// Pick a never-before-watched video from a configured playlist
+    New {
+        /// Bypass the playlist cache and refetch from YouTube
+        #[arg(long)]
+        refresh: bool,
+        /// Open a chooser to select which playlist to use
+        #[arg(long)]
+        pick: bool,
+    },
+    /// Pick any video across all configured playlists, ignoring watch history
+    Any {
+        /// Bypass the playlist cache and refetch from YouTube
+        #[arg(long)]
+        refresh: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -76,8 +91,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Commands::History { limit } => show_history(limit),
-        Commands::Resume => run_resume(),
-        Commands::Playnew { refresh, pick } => run_playnew(refresh, pick),
+        Commands::Play { action } => run_play(action),
         Commands::Playlists { action } => run_playlists(action),
         Commands::Complete { shell } => {
             print_completions(shell);
@@ -86,7 +100,15 @@ fn main() -> Result<()> {
     }
 }
 
-fn run_resume() -> Result<()> {
+fn run_play(action: PlayAction) -> Result<()> {
+    match action {
+        PlayAction::Resume => run_play_resume(),
+        PlayAction::New { refresh, pick } => run_play_new(refresh, pick),
+        PlayAction::Any { refresh } => run_play_any(refresh),
+    }
+}
+
+fn run_play_resume() -> Result<()> {
     let Some(sel) = tui::run_resume_picker()? else {
         return Ok(());
     };
@@ -101,7 +123,45 @@ fn run_resume() -> Result<()> {
 
 const PLAYLIST_CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 
-fn run_playnew(refresh: bool, pick: bool) -> Result<()> {
+fn run_play_any(refresh: bool) -> Result<()> {
+    let cfg = config::load();
+    if cfg.playlists.is_empty() {
+        bail!(
+            "no playlists configured — add one with `rstube playlists add <name> <url-or-id>` \
+             (config: {})",
+            config::config_path().display()
+        );
+    }
+
+    let mut merged: Vec<playlist::PlaylistItem> = Vec::new();
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for pl in &cfg.playlists {
+        let items = load_playlist_items(&pl.url, refresh)?;
+        for it in items {
+            if seen_ids.insert(it.id.clone()) {
+                merged.push(it);
+            }
+        }
+    }
+    if merged.is_empty() {
+        bail!("all configured playlists are empty");
+    }
+
+    eprintln!("{} total videos across {} playlists.", merged.len(), cfg.playlists.len());
+
+    let Some(sel) = tui::run_playnew_picker(merged)? else {
+        return Ok(());
+    };
+    ensure_tool("mpv")?;
+    mpv::play(mpv::PlayRequest {
+        url: &sel.url,
+        title: sel.title.as_deref(),
+        duration_secs: sel.duration_secs,
+        audio_only: sel.audio_only,
+    })
+}
+
+fn run_play_new(refresh: bool, pick: bool) -> Result<()> {
     let cfg = config::load();
     if cfg.playlists.is_empty() {
         bail!(
