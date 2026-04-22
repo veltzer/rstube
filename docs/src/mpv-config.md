@@ -1,4 +1,4 @@
-# mpv configuration tips
+# mpv configuration
 
 rstube shells out to `mpv` to play videos — it doesn't manage mpv's settings.
 Customize mpv by editing its config files directly. On Linux these live under

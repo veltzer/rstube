@@ -1,0 +1,14 @@
+[book]
+authors = ["Mark Veltzer"]
+language = "en"
+src = "src"
+title = "rstube — YouTube playback from the terminal"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/veltzer/rstube"
+edit-url-template = "https://github.com/veltzer/rstube/edit/main/docs/{path}"
