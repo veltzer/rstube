@@ -650,7 +650,7 @@ fn run_show(action: ShowAction) -> Result<()> {
                     print_history_row(e);
                 } else {
                     let title = e.title.as_deref().unwrap_or(&e.url);
-                    println!("{} {title}", e.video_id);
+                    println!("{title}");
                 }
             }
             Ok(())

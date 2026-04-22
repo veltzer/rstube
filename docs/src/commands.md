@@ -63,13 +63,13 @@ Text-only siblings of the `play` pickers — same data, no TUI, pipeable.
 
 Prints every video you've watched to within 30 seconds of the end. One
 line per video, deduped by video id (most recent session kept), most
-recent first. Default format is just id + title:
+recent first. Default format is just the title:
 
 ```
-<id> <title>
+<title>
 ```
 
-Pass `-d` / `--details` to include timing and percentage:
+Pass `-d` / `--details` to include the video id, timing, and percentage:
 
 ```
 [pos/dur (pct%)] <id> <title>
