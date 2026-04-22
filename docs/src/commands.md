@@ -4,9 +4,9 @@ Top-level commands in `rstube`.
 
 | Command | Description |
 |---|---|
-| `rstube play resume` | Pick an in-progress video from history |
-| `rstube play new [--refresh] [--pick]` | Pick an unwatched video from a configured playlist |
-| `rstube play any [--refresh]` | Pick any video across all configured playlists |
+| `rstube play resume [-v]` | Pick an in-progress video from history |
+| `rstube play new [--refresh] [--pick] [-v]` | Pick an unwatched video from a configured playlist |
+| `rstube play any [--refresh] [-v]` | Pick any video across all configured playlists |
 | `rstube history [-n N]` | Show the last N history entries (default 20) |
 | `rstube playlists ...` | Manage configured playlists (see [Playlists](playlists.md)) |
 | `rstube install-deps` | Install missing `mpv` / `yt-dlp` |
@@ -39,6 +39,16 @@ exits.
   (deduplicated by video id).
 - Does *not* filter by watch history — useful for rewatching.
 - `--refresh` — bypass the cache.
+
+### `-v` / `--verbose` (all three `play` subcommands)
+
+By default rstube silences mpv's stdout — no status line, no chatter.
+mpv's stderr stays connected so real errors (yt-dlp failures, network
+issues) are still visible.
+
+Pass `-v` to reconnect stdout and add `--msg-level=all=v` to the mpv
+command, giving you the full status line and verbose log. Use it when
+you're debugging a stream that isn't working.
 
 ## Pickers — keys
 

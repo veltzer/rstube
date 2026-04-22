@@ -66,3 +66,6 @@ playlist a video was in.
   playlists. Nice as a cron/systemd-timer job.
 - In any picker: `/` to filter, `a` to toggle audio-only playback, `d` to
   delete the current row from history, `q` to quit.
+- Pass `-v` / `--verbose` to any `play` subcommand to see mpv's terminal
+  status line and verbose log — useful for debugging a stream that isn't
+  playing.

@@ -31,18 +31,38 @@ MBTN_LEFT     cycle pause
 MBTN_RIGHT    cycle mute
 WHEEL_UP      seek 10
 WHEEL_DOWN    seek -10
+F11           cycle fullscreen
 ```
 
 - `MBTN_LEFT` → single-click pauses/resumes. Double-click still goes fullscreen
   — mpv disambiguates single vs double on its own.
 - `MBTN_RIGHT` → toggles mute.
 - `WHEEL_UP` / `WHEEL_DOWN` → seek ±10s.
+- `F11` → toggle fullscreen. mpv's default is lowercase `f`; adding F11 matches
+  the fullscreen key most desktop apps use. Both work at once.
 
 Restart mpv (close and reopen) for changes to take effect. No rstube restart
 needed — rstube just spawns `mpv`, so it picks up whatever config is on disk at
 spawn time.
 
-## Full keybind reference
+## Common built-in bindings
+
+These are mpv defaults (no config needed). Useful to know before customizing:
+
+| Key | Action |
+|---|---|
+| `space` / `p` | Pause / resume |
+| `f` | Toggle fullscreen |
+| `Esc` | Exit fullscreen (doesn't quit) |
+| `q` | Quit (saves position if `save-position-on-quit` is set) |
+| `←` / `→` | Seek ±5s |
+| `↑` / `↓` | Seek ±1m |
+| `9` / `0` | Volume down / up |
+| `m` | Mute |
+| `j` / `J` | Cycle subtitles (forward / backward) |
+| `#` | Cycle audio tracks |
+| `T` | Toggle always-on-top |
+| `s` | Take a screenshot |
 
 Run `mpv --input-keylist` to see every bindable key name, and `mpv
 --input-cmdlist` for every command. The online reference is at
