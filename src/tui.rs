@@ -41,24 +41,36 @@ enum Focus {
     Filter,
 }
 
-const MIN_RESUME_SECS: f64 = 10.0;
-const RESUME_TAIL_MARGIN_SECS: f64 = 10.0;
+pub const MIN_PARTIAL_SECS: f64 = 10.0;
+pub const PARTIAL_TAIL_MARGIN_SECS: f64 = 10.0;
 
-fn is_in_progress(e: &HistoryEntry) -> bool {
-    if e.position_on_exit < MIN_RESUME_SECS {
+/// A session is "partial" if it was watched at least `MIN_PARTIAL_SECS` in
+/// and ended more than `PARTIAL_TAIL_MARGIN_SECS` before the end.
+pub fn is_partial(e: &HistoryEntry) -> bool {
+    if e.position_on_exit < MIN_PARTIAL_SECS {
         return false;
     }
     match e.duration_secs {
-        Some(d) if d > 0.0 => e.position_on_exit < d - RESUME_TAIL_MARGIN_SECS,
+        Some(d) if d > 0.0 => e.position_on_exit < d - PARTIAL_TAIL_MARGIN_SECS,
         _ => true,
     }
 }
 
-/// Resume picker: in-progress history entries. Returns (count-before-picker,
-/// selection). `count_before` lets the caller distinguish "nothing to resume"
-/// from "user quit the picker".
-pub fn run_resume_picker() -> Result<(usize, Option<Selection>)> {
-    let rows: Vec<PickerRow> = resume_candidates()
+/// A session counts as "finished" if a duration is known and the position
+/// on exit is within `PARTIAL_TAIL_MARGIN_SECS` of that duration. Sessions
+/// with unknown duration cannot be classified finished.
+pub fn is_finished(e: &HistoryEntry) -> bool {
+    match e.duration_secs {
+        Some(d) if d > 0.0 => e.position_on_exit >= d - PARTIAL_TAIL_MARGIN_SECS,
+        _ => false,
+    }
+}
+
+/// Partial picker: partially-watched history entries. Returns
+/// (count-before-picker, selection). `count` lets the caller distinguish
+/// "nothing to resume" from "user quit the picker".
+pub fn run_partial_picker() -> Result<(usize, Option<Selection>)> {
+    let rows: Vec<PickerRow> = partial_candidates()
         .into_iter()
         .map(|e| PickerRow {
             video_id: e.video_id,
@@ -70,19 +82,43 @@ pub fn run_resume_picker() -> Result<(usize, Option<Selection>)> {
         })
         .collect();
     let count = rows.len();
-    let sel = run(rows, "resume")?;
+    let sel = run(rows, "partial")?;
     Ok((count, sel))
 }
 
-/// History entries eligible for resume: most recent in-progress session per
-/// video. Unlike a naive "most recent session", this prefers any session that
-/// was actually watched (≥ MIN_RESUME_SECS) over a more recent 0-second one —
-/// otherwise a quick accidental reopen clobbers the resumable entry.
-fn resume_candidates() -> Vec<HistoryEntry> {
+/// History entries eligible as "partial": most recent partially-watched
+/// session per video. Unlike a naive "most recent session", this prefers any
+/// session that was actually watched (≥ MIN_PARTIAL_SECS) over a more recent
+/// 0-second one — otherwise a quick accidental reopen clobbers the partial
+/// entry.
+pub fn partial_candidates() -> Vec<HistoryEntry> {
     use std::collections::HashMap;
     let mut by_id: HashMap<String, HistoryEntry> = HashMap::new();
     for e in state::load_all_history() {
-        if !is_in_progress(&e) {
+        if !is_partial(&e) {
+            continue;
+        }
+        by_id
+            .entry(e.video_id.clone())
+            .and_modify(|existing| {
+                if e.ts_end > existing.ts_end {
+                    *existing = e.clone();
+                }
+            })
+            .or_insert(e);
+    }
+    let mut out: Vec<HistoryEntry> = by_id.into_values().collect();
+    out.sort_by(|a, b| b.ts_end.cmp(&a.ts_end));
+    out
+}
+
+/// History entries that count as "finished": most recent finished session
+/// per video.
+pub fn finished_candidates() -> Vec<HistoryEntry> {
+    use std::collections::HashMap;
+    let mut by_id: HashMap<String, HistoryEntry> = HashMap::new();
+    for e in state::load_all_history() {
+        if !is_finished(&e) {
             continue;
         }
         by_id

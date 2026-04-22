@@ -26,10 +26,15 @@ enum Commands {
         #[arg(short = 'n', long, default_value_t = 20)]
         limit: usize,
     },
-    /// Play videos: resume in-progress, pick a new one, or browse anything
+    /// Play videos: resume a partial, pick a new one, or browse anything
     Play {
         #[command(subcommand)]
         action: PlayAction,
+    },
+    /// Print lists of videos by category (finished, partial, new)
+    Show {
+        #[command(subcommand)]
+        action: ShowAction,
     },
     /// Manage the configured YouTube playlists (used by `play new`)
     Playlists {
@@ -49,8 +54,8 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum PlayAction {
-    /// Pick an in-progress video from history to resume
-    Resume {
+    /// Pick a partially-watched video from history to resume
+    Partial {
         /// Show mpv's terminal status line and verbose log output
         #[arg(short, long)]
         verbose: bool,
@@ -75,6 +80,20 @@ enum PlayAction {
         /// Show mpv's terminal status line and verbose log output
         #[arg(short, long)]
         verbose: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum ShowAction {
+    /// List videos watched to (near) the end
+    Finished,
+    /// List videos partially watched — same set `play partial` offers
+    Partial,
+    /// List videos in configured playlists you haven't started yet
+    New {
+        /// Bypass the playlist cache and refetch from YouTube
+        #[arg(long)]
+        refresh: bool,
     },
 }
 
@@ -104,6 +123,7 @@ fn main() -> Result<()> {
         }
         Commands::History { limit } => show_history(limit),
         Commands::Play { action } => run_play(action),
+        Commands::Show { action } => run_show(action),
         Commands::Playlists { action } => run_playlists(action),
         Commands::Complete { shell } => {
             print_completions(shell);
@@ -115,14 +135,14 @@ fn main() -> Result<()> {
 
 fn run_play(action: PlayAction) -> Result<()> {
     match action {
-        PlayAction::Resume { verbose } => run_play_resume(verbose),
+        PlayAction::Partial { verbose } => run_play_partial(verbose),
         PlayAction::New { refresh, pick, verbose } => run_play_new(refresh, pick, verbose),
         PlayAction::Any { refresh, verbose } => run_play_any(refresh, verbose),
     }
 }
 
-fn run_play_resume(verbose: bool) -> Result<()> {
-    let (count, sel) = tui::run_resume_picker()?;
+fn run_play_partial(verbose: bool) -> Result<()> {
+    let (count, sel) = tui::run_partial_picker()?;
     if count == 0 {
         eprintln!("Nothing to resume — no videos with ≥10s of watch time in history.");
         eprintln!("(use `rstube play new` or `rstube play any` to start a new video)");
@@ -143,7 +163,10 @@ fn run_play_resume(verbose: bool) -> Result<()> {
 
 const PLAYLIST_CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 
-fn run_play_any(refresh: bool, verbose: bool) -> Result<()> {
+/// Merge all configured playlists into one deduped list (by video id),
+/// preserving first-occurrence order. Bails if no playlists are configured
+/// or every playlist is empty.
+fn load_merged_playlists(refresh: bool) -> Result<Vec<playlist::PlaylistItem>> {
     let cfg = config::load();
     if cfg.playlists.is_empty() {
         bail!(
@@ -152,7 +175,6 @@ fn run_play_any(refresh: bool, verbose: bool) -> Result<()> {
             config::config_path().display()
         );
     }
-
     let mut merged: Vec<playlist::PlaylistItem> = Vec::new();
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     for pl in &cfg.playlists {
@@ -166,6 +188,12 @@ fn run_play_any(refresh: bool, verbose: bool) -> Result<()> {
     if merged.is_empty() {
         bail!("all configured playlists are empty");
     }
+    Ok(merged)
+}
+
+fn run_play_any(refresh: bool, verbose: bool) -> Result<()> {
+    let merged = load_merged_playlists(refresh)?;
+    let cfg = config::load();
 
     eprintln!("{} total videos across {} playlists.", merged.len(), cfg.playlists.len());
 
@@ -392,6 +420,61 @@ _rstube_playlist_names() {
         }
     }
     format!("{helper}{result}")
+}
+
+fn run_show(action: ShowAction) -> Result<()> {
+    match action {
+        ShowAction::Finished => {
+            let entries = tui::finished_candidates();
+            if entries.is_empty() {
+                println!("(no finished videos)");
+                return Ok(());
+            }
+            for e in &entries {
+                print_history_row(e);
+            }
+            Ok(())
+        }
+        ShowAction::Partial => {
+            let entries = tui::partial_candidates();
+            if entries.is_empty() {
+                println!("(no partial videos)");
+                return Ok(());
+            }
+            for e in &entries {
+                print_history_row(e);
+            }
+            Ok(())
+        }
+        ShowAction::New { refresh } => {
+            let merged = load_merged_playlists(refresh)?;
+            let seen = state::played_video_ids();
+            let unseen: Vec<playlist::PlaylistItem> =
+                merged.into_iter().filter(|it| !seen.contains(&it.id)).collect();
+            if unseen.is_empty() {
+                println!("(no new videos — every item in your playlists is in history)");
+                return Ok(());
+            }
+            for it in &unseen {
+                let title = it.title.as_deref().unwrap_or(&it.id);
+                let dur = it.duration.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+                println!("[{dur}] {title}");
+            }
+            Ok(())
+        }
+    }
+}
+
+fn print_history_row(entry: &state::HistoryEntry) {
+    let title = entry.title.as_deref().unwrap_or(&entry.url);
+    let pos = fmt_dur(entry.position_on_exit);
+    let dur = entry.duration_secs.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+    let pct = entry
+        .duration_secs
+        .filter(|d| *d > 0.0)
+        .map(|d| format!(" ({:.0}%)", 100.0 * entry.position_on_exit / d))
+        .unwrap_or_default();
+    println!("[{pos}/{dur}{pct}] {title}");
 }
 
 fn show_history(limit: usize) -> Result<()> {

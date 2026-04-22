@@ -6,9 +6,9 @@ rstube maintains two pieces of per-video state:
   mpv plays, so killing the terminal doesn't lose progress.
 - **history** — a JSON-lines log of every playback session. Append-only.
 
-## What counts as "resumable"
+## What counts as "partial"
 
-`rstube play resume` shows history entries where:
+`rstube play partial` shows history entries where:
 
 - The saved position is ≥ 10 seconds (quick-quit noise is ignored).
 - If the duration is known, the position is more than 10 seconds before
@@ -16,13 +16,13 @@ rstube maintains two pieces of per-video state:
 
 If you open a video and immediately quit (before 10 seconds), the new
 0-second entry does **not** shadow an older session that was actually
-watched — the resume picker prefers the most recent *resumable* session
+watched — the partial picker prefers the most recent *partial* session
 per video, not the most recent session overall.
 
 ## Commands that interact with history
 
 - `rstube history [-n N]` — print the last N entries.
-- `rstube play resume` — pick an in-progress video.
+- `rstube play partial` — pick an in-progress video.
 - Inside any picker, `d` removes the selected entry's saved position —
   useful if a video gets stuck in a partially-watched state you don't
   want to resume.
@@ -39,7 +39,7 @@ corrupt the file — you end up with either the previous snapshot or the
 new one, never a partial.
 
 Worst case: you lose **up to 30 seconds** of progress — the time since
-the last tick. `rstube play resume` will still show the video, and it
+the last tick. `rstube play partial` will still show the video, and it
 will start where the last tick landed.
 
 There's one narrow exception: if playback is killed within the first 30
@@ -103,7 +103,7 @@ Format — a flat JSON object keyed by YouTube video id:
 
 - `position_secs` — where the playhead was at the last tick (seconds).
 - `duration_secs` — the total length if mpv has reported it yet, else
-  null. Used by the resume picker to hide near-finished videos.
+  null. Used by the partial picker to hide near-finished videos.
 - `updated_at` — unix timestamp of the last tick. Not used for anything
   user-visible; useful when debugging.
 
@@ -192,7 +192,7 @@ All three live under the same state directory (`RSTUBE_STATE_DIR` →
 environment](files.md) for the full env-var story.
 
 Safe to delete any of these — rstube recreates them on demand. Deleting
-`positions.json` just means `play resume` will be empty until you watch
+`positions.json` just means `play partial` will be empty until you watch
 something; deleting `history.jsonl` clears the log.
 
 ## Syncing across machines

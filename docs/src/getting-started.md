@@ -39,7 +39,7 @@ message rather than a silent no-op.
 ## 3. Resume a video you started
 
 ```bash
-rstube play resume
+rstube play partial
 ```
 
 Shows videos in your watch history where you're partway through (at least

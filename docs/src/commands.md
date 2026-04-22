@@ -4,9 +4,12 @@ Top-level commands in `rstube`.
 
 | Command | Description |
 |---|---|
-| `rstube play resume [-v]` | Pick an in-progress video from history |
+| `rstube play partial [-v]` | Pick a partially-watched video from history |
 | `rstube play new [--refresh] [--pick] [-v]` | Pick an unwatched video from a configured playlist |
 | `rstube play any [--refresh] [-v]` | Pick any video across all configured playlists |
+| `rstube show finished` | Print videos watched to the end |
+| `rstube show partial` | Print videos partially watched (same set as `play partial`) |
+| `rstube show new [--refresh]` | Print videos in playlists you haven't started |
 | `rstube history [-n N]` | Show the last N history entries (default 20) |
 | `rstube playlists ...` | Manage configured playlists (see [Playlists](playlists.md)) |
 | `rstube install-deps` | Install missing `mpv` / `yt-dlp` |
@@ -15,12 +18,12 @@ Top-level commands in `rstube`.
 
 ## `play` subcommands
 
-### `play resume`
+### `play partial`
 
-Opens the resume picker with in-progress videos — defined as any history
-entry where the saved position is ≥ 10 seconds and more than 10 seconds
-before the end. If there are no such entries, prints a clear message and
-exits.
+Opens the partial picker with partially-watched videos — defined as any
+history entry where the saved position is ≥ 10 seconds and more than 10
+seconds before the end. If there are no such entries, prints a clear
+message and exits.
 
 ### `play new`
 
@@ -49,6 +52,39 @@ issues) are still visible.
 Pass `-v` to reconnect stdout and add `--msg-level=all=v` to the mpv
 command, giving you the full status line and verbose log. Use it when
 you're debugging a stream that isn't working.
+
+## `show` subcommands
+
+Text-only siblings of the `play` pickers — same data, no TUI, pipeable.
+
+### `show finished`
+
+Prints every video you've watched to within 10s of the end. One line per
+video, deduped by video id (most recent session kept), most recent
+first:
+
+```
+[pos/dur (pct%)] title
+```
+
+### `show partial`
+
+Same set of videos `play partial` would show — partially watched (≥10s
+in, >10s before the end).
+
+### `show new`
+
+Every video across all configured playlists that isn't yet in your
+history. Uses the playlist cache by default; pass `--refresh` to
+refetch. Format:
+
+```
+[duration] title
+```
+
+Note: `new` counts any history entry as "seen", including phase-1
+open-session lines. If you *started* a video (even briefly), `show new`
+will not list it again.
 
 ## Pickers — keys
 
