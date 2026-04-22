@@ -50,7 +50,11 @@ enum Commands {
 #[derive(Subcommand)]
 enum PlayAction {
     /// Pick an in-progress video from history to resume
-    Resume,
+    Resume {
+        /// Show mpv's terminal status line and verbose log output
+        #[arg(short, long)]
+        verbose: bool,
+    },
     /// Pick a never-before-watched video from a configured playlist
     New {
         /// Bypass the playlist cache and refetch from YouTube
@@ -59,12 +63,18 @@ enum PlayAction {
         /// Open a chooser to select which playlist to use
         #[arg(long)]
         pick: bool,
+        /// Show mpv's terminal status line and verbose log output
+        #[arg(short, long)]
+        verbose: bool,
     },
     /// Pick any video across all configured playlists, ignoring watch history
     Any {
         /// Bypass the playlist cache and refetch from YouTube
         #[arg(long)]
         refresh: bool,
+        /// Show mpv's terminal status line and verbose log output
+        #[arg(short, long)]
+        verbose: bool,
     },
 }
 
@@ -105,13 +115,13 @@ fn main() -> Result<()> {
 
 fn run_play(action: PlayAction) -> Result<()> {
     match action {
-        PlayAction::Resume => run_play_resume(),
-        PlayAction::New { refresh, pick } => run_play_new(refresh, pick),
-        PlayAction::Any { refresh } => run_play_any(refresh),
+        PlayAction::Resume { verbose } => run_play_resume(verbose),
+        PlayAction::New { refresh, pick, verbose } => run_play_new(refresh, pick, verbose),
+        PlayAction::Any { refresh, verbose } => run_play_any(refresh, verbose),
     }
 }
 
-fn run_play_resume() -> Result<()> {
+fn run_play_resume(verbose: bool) -> Result<()> {
     let (count, sel) = tui::run_resume_picker()?;
     if count == 0 {
         eprintln!("Nothing to resume — no videos with ≥10s of watch time in history.");
@@ -127,12 +137,13 @@ fn run_play_resume() -> Result<()> {
         title: sel.title.as_deref(),
         duration_secs: sel.duration_secs,
         audio_only: sel.audio_only,
+        verbose,
     })
 }
 
 const PLAYLIST_CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 
-fn run_play_any(refresh: bool) -> Result<()> {
+fn run_play_any(refresh: bool, verbose: bool) -> Result<()> {
     let cfg = config::load();
     if cfg.playlists.is_empty() {
         bail!(
@@ -167,10 +178,11 @@ fn run_play_any(refresh: bool) -> Result<()> {
         title: sel.title.as_deref(),
         duration_secs: sel.duration_secs,
         audio_only: sel.audio_only,
+        verbose,
     })
 }
 
-fn run_play_new(refresh: bool, pick: bool) -> Result<()> {
+fn run_play_new(refresh: bool, pick: bool, verbose: bool) -> Result<()> {
     let cfg = config::load();
     if cfg.playlists.is_empty() {
         bail!(
@@ -225,6 +237,7 @@ fn run_play_new(refresh: bool, pick: bool) -> Result<()> {
         title: sel.title.as_deref(),
         duration_secs: sel.duration_secs,
         audio_only: sel.audio_only,
+        verbose,
     })
 }
 

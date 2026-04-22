@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -20,6 +20,11 @@ pub struct PlayRequest<'a> {
     pub title: Option<&'a str>,
     pub duration_secs: Option<f64>,
     pub audio_only: bool,
+    /// When false (default), mpv's stdout is redirected to /dev/null to hide
+    /// the terminal status line. stderr stays connected so real errors are
+    /// still visible. When true, both streams inherit from the parent and
+    /// `--msg-level=all=v` is added for extra detail.
+    pub verbose: bool,
 }
 
 pub fn play(req: PlayRequest<'_>) -> Result<()> {
@@ -37,6 +42,13 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
     if let Some(secs) = resume_at {
         cmd.arg(format!("--start=+{secs}"));
         eprintln!("(resuming at {:.0}s)", secs);
+    }
+    if req.verbose {
+        cmd.arg("--msg-level=all=v");
+    } else {
+        // Silence mpv's terminal status line. Errors still go to stderr which
+        // we leave inherited.
+        cmd.stdout(Stdio::null());
     }
     cmd.arg(req.url);
 
