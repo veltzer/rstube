@@ -1,13 +1,15 @@
+mod mpv;
+mod state;
+mod tui;
+
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use serde::Deserialize;
-use std::io::{self, BufRead, Write};
 use std::process::{Command, Stdio};
 
 #[derive(Parser)]
 #[command(name = "rstube")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Search and play YouTube videos via yt-dlp + mpv")]
+#[command(about = "Resume and replay YouTube videos via mpv, with position tracking")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -15,35 +17,16 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Search YouTube and play a selected result
-    Search {
-        /// Search query, or a direct YouTube URL
-        query: Vec<String>,
-
-        /// Number of search results to show
-        #[arg(short = 'n', long, default_value_t = 10)]
-        results: usize,
-
-        /// Play audio only
-        #[arg(short = 'a', long)]
-        audio_only: bool,
-
-        /// Auto-play the first result without prompting
-        #[arg(short = 'f', long)]
-        first: bool,
+    /// Show recent playback history
+    History {
+        /// Max entries to show (most recent first)
+        #[arg(short = 'n', long, default_value_t = 20)]
+        limit: usize,
     },
+    /// Open TUI picker to resume a previously played video
+    Resume,
     /// Print full build/version info (git sha, rustc, build time)
     Version,
-}
-
-#[derive(Deserialize)]
-struct Entry {
-    id: String,
-    title: String,
-    #[serde(default)]
-    uploader: Option<String>,
-    #[serde(default)]
-    duration: Option<f64>,
 }
 
 fn main() -> Result<()> {
@@ -53,33 +36,49 @@ fn main() -> Result<()> {
             print_version();
             Ok(())
         }
-        Commands::Search { query, results, audio_only, first } => {
-            run_search(query, results, audio_only, first)
-        }
+        Commands::History { limit } => show_history(limit),
+        Commands::Resume => run_resume(),
     }
 }
 
-fn run_search(query: Vec<String>, results: usize, audio_only: bool, first: bool) -> Result<()> {
-    ensure_tool("yt-dlp")?;
-
-    if query.is_empty() {
-        bail!("provide a search query or a YouTube URL");
-    }
-    let query = query.join(" ");
-
-    let url = if is_url(&query) {
-        query
-    } else {
-        let entries = search(&query, results)?;
-        if entries.is_empty() {
-            bail!("no results for {query:?}");
-        }
-        let choice = if first { 0 } else { prompt_choice(&entries)? };
-        format!("https://www.youtube.com/watch?v={}", entries[choice].id)
+fn run_resume() -> Result<()> {
+    let Some(sel) = tui::run_picker()? else {
+        return Ok(());
     };
-
     ensure_tool("mpv")?;
-    play(&url, audio_only)
+    mpv::play(mpv::PlayRequest {
+        url: &sel.url,
+        title: sel.title.as_deref(),
+        duration_secs: sel.duration_secs,
+        audio_only: sel.audio_only,
+    })
+}
+
+fn show_history(limit: usize) -> Result<()> {
+    let path = state::history_path();
+    if !path.exists() {
+        println!("(no history yet — path: {})", path.display());
+        return Ok(());
+    }
+    let contents = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let lines: Vec<&str> = contents.lines().filter(|l| !l.trim().is_empty()).collect();
+    let start = lines.len().saturating_sub(limit);
+    for line in &lines[start..] {
+        let entry: state::HistoryEntry = match serde_json::from_str(line) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let title = entry.title.as_deref().unwrap_or(&entry.url);
+        let pos = fmt_dur(entry.position_on_exit);
+        let dur = entry.duration_secs.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+        let pct = entry.duration_secs
+            .filter(|d| *d > 0.0)
+            .map(|d| format!(" ({:.0}%)", 100.0 * entry.position_on_exit / d))
+            .unwrap_or_default();
+        println!("[{pos}/{dur}{pct}] {title}");
+    }
+    Ok(())
 }
 
 fn print_version() {
@@ -91,10 +90,6 @@ fn print_version() {
     println!("RUSTC_SEMVER: {}", env!("RUSTC_SEMVER"));
     println!("RUST_EDITION: {}", env!("RUST_EDITION"));
     println!("BUILD_TIMESTAMP: {}", env!("BUILD_TIMESTAMP"));
-}
-
-fn is_url(s: &str) -> bool {
-    s.starts_with("http://") || s.starts_with("https://") || s.starts_with("www.")
 }
 
 fn ensure_tool(name: &str) -> Result<()> {
@@ -113,54 +108,6 @@ fn which(name: &str) -> Result<()> {
     Ok(())
 }
 
-fn search(query: &str, n: usize) -> Result<Vec<Entry>> {
-    let spec = format!("ytsearch{n}:{query}");
-    let output = Command::new("yt-dlp")
-        .args(["-j", "--flat-playlist", "--default-search", "ytsearch", &spec])
-        .output()
-        .context("failed to run yt-dlp")?;
-    if !output.status.success() {
-        bail!(
-            "yt-dlp search failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let mut entries = Vec::new();
-    for line in output.stdout.split(|b| *b == b'\n') {
-        if line.is_empty() {
-            continue;
-        }
-        let entry: Entry = serde_json::from_slice(line)
-            .context("failed to parse yt-dlp JSON line")?;
-        entries.push(entry);
-    }
-    Ok(entries)
-}
-
-fn prompt_choice(entries: &[Entry]) -> Result<usize> {
-    for (i, e) in entries.iter().enumerate() {
-        let uploader = e.uploader.as_deref().unwrap_or("?");
-        let dur = e.duration.map(fmt_dur).unwrap_or_else(|| "--:--".into());
-        println!("{:>2}. [{dur}] {} — {uploader}", i + 1, e.title);
-    }
-    print!("Select [1-{}] (enter to pick 1, q to quit): ", entries.len());
-    io::stdout().flush()?;
-    let mut line = String::new();
-    io::stdin().lock().read_line(&mut line)?;
-    let trimmed = line.trim();
-    if trimmed.eq_ignore_ascii_case("q") {
-        std::process::exit(0);
-    }
-    if trimmed.is_empty() {
-        return Ok(0);
-    }
-    let n: usize = trimmed.parse().context("invalid selection")?;
-    if n == 0 || n > entries.len() {
-        bail!("selection out of range");
-    }
-    Ok(n - 1)
-}
-
 fn fmt_dur(secs: f64) -> String {
     let s = secs as u64;
     let h = s / 3600;
@@ -171,17 +118,4 @@ fn fmt_dur(secs: f64) -> String {
     } else {
         format!("{m}:{sec:02}")
     }
-}
-
-fn play(url: &str, audio_only: bool) -> Result<()> {
-    let mut cmd = Command::new("mpv");
-    if audio_only {
-        cmd.arg("--no-video");
-    }
-    cmd.arg(url);
-    let status = cmd.status().context("failed to run mpv")?;
-    if !status.success() {
-        bail!("mpv exited with status {status}");
-    }
-    Ok(())
 }
