@@ -71,12 +71,10 @@ pub fn run_resume_picker() -> Result<Option<Selection>> {
     run(rows, "resume")
 }
 
-/// Playnew picker: playlist items never appearing in history.
+/// Playnew picker: caller is expected to have already filtered out history.
 pub fn run_playnew_picker(items: Vec<PlaylistItem>) -> Result<Option<Selection>> {
-    let seen = state::played_video_ids();
     let rows: Vec<PickerRow> = items
         .into_iter()
-        .filter(|it| !seen.contains(&it.id))
         .map(|it| PickerRow {
             url: it.url(),
             video_id: it.id,

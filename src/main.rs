@@ -28,7 +28,11 @@ enum Commands {
     /// Open TUI picker to resume an in-progress video from history
     Resume,
     /// Open TUI picker to play a never-before-watched video from the playlist
-    Playnew,
+    Playnew {
+        /// Bypass the playlist cache and refetch from YouTube
+        #[arg(long)]
+        refresh: bool,
+    },
     /// Manage the configured YouTube playlist (used by `playnew`)
     Playlist {
         #[command(subcommand)]
@@ -55,7 +59,7 @@ fn main() -> Result<()> {
         }
         Commands::History { limit } => show_history(limit),
         Commands::Resume => run_resume(),
-        Commands::Playnew => run_playnew(),
+        Commands::Playnew { refresh } => run_playnew(refresh),
         Commands::Playlist { action } => run_playlist(action),
     }
 }
@@ -73,7 +77,9 @@ fn run_resume() -> Result<()> {
     })
 }
 
-fn run_playnew() -> Result<()> {
+const PLAYLIST_CACHE_TTL_SECS: u64 = 24 * 60 * 60;
+
+fn run_playnew(refresh: bool) -> Result<()> {
     let cfg = config::load();
     let Some(url) = cfg.playlist_url else {
         bail!(
@@ -82,13 +88,36 @@ fn run_playnew() -> Result<()> {
             config::config_path().display()
         );
     };
-    ensure_tool("yt-dlp")?;
-    eprintln!("Fetching playlist…");
-    let items = playlist::fetch(&url)?;
+
+    let items = if refresh {
+        fetch_and_cache(&url)?
+    } else {
+        match state::load_playlist_cache(&url) {
+            Some(entry) if state::now_secs().saturating_sub(entry.fetched_at) < PLAYLIST_CACHE_TTL_SECS => {
+                let age_mins = state::now_secs().saturating_sub(entry.fetched_at) / 60;
+                eprintln!("Using cached playlist ({} items, {}m old — rerun with --refresh to refetch).", entry.items.len(), age_mins);
+                entry.items
+            }
+            _ => fetch_and_cache(&url)?,
+        }
+    };
+
     if items.is_empty() {
         bail!("playlist returned no items: {url}");
     }
-    let Some(sel) = tui::run_playnew_picker(items)? else {
+
+    let seen = state::played_video_ids();
+    let unseen: Vec<playlist::PlaylistItem> = items
+        .into_iter()
+        .filter(|it| !seen.contains(&it.id))
+        .collect();
+    if unseen.is_empty() {
+        eprintln!("No new videos — every item in the playlist is already in your history.");
+        eprintln!("(try `rstube playnew --refresh` to refetch the playlist)");
+        return Ok(());
+    }
+
+    let Some(sel) = tui::run_playnew_picker(unseen)? else {
         return Ok(());
     };
     ensure_tool("mpv")?;
@@ -98,6 +127,16 @@ fn run_playnew() -> Result<()> {
         duration_secs: sel.duration_secs,
         audio_only: sel.audio_only,
     })
+}
+
+fn fetch_and_cache(url: &str) -> Result<Vec<playlist::PlaylistItem>> {
+    ensure_tool("yt-dlp")?;
+    eprintln!("Fetching playlist…");
+    let items = playlist::fetch(url)?;
+    if let Err(e) = state::save_playlist_cache(url, &items) {
+        eprintln!("warning: failed to save playlist cache: {e}");
+    }
+    Ok(items)
 }
 
 fn run_playlist(action: PlaylistAction) -> Result<()> {

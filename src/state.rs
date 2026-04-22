@@ -6,6 +6,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::playlist::PlaylistItem;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Position {
     pub position_secs: f64,
@@ -45,6 +47,10 @@ pub fn positions_path() -> PathBuf {
 
 pub fn history_path() -> PathBuf {
     state_dir().join("history.jsonl")
+}
+
+pub fn playlist_cache_path() -> PathBuf {
+    state_dir().join("playlist_cache.json")
 }
 
 pub fn now_secs() -> u64 {
@@ -143,6 +149,50 @@ pub fn played_video_ids() -> std::collections::HashSet<String> {
         }
     }
     ids
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct PlaylistCacheFile {
+    #[serde(default)]
+    entries: HashMap<String, PlaylistCacheEntry>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PlaylistCacheEntry {
+    pub fetched_at: u64,
+    pub items: Vec<PlaylistItem>,
+}
+
+fn load_playlist_cache_file() -> PlaylistCacheFile {
+    let path = playlist_cache_path();
+    let Ok(bytes) = fs::read(&path) else {
+        return PlaylistCacheFile { entries: HashMap::new() };
+    };
+    serde_json::from_slice(&bytes).unwrap_or(PlaylistCacheFile { entries: HashMap::new() })
+}
+
+pub fn load_playlist_cache(url: &str) -> Option<PlaylistCacheEntry> {
+    load_playlist_cache_file().entries.remove(url)
+}
+
+pub fn save_playlist_cache(url: &str, items: &[PlaylistItem]) -> Result<()> {
+    ensure_state_dir()?;
+    let mut cache = load_playlist_cache_file();
+    cache.entries.insert(
+        url.to_owned(),
+        PlaylistCacheEntry {
+            fetched_at: now_secs(),
+            items: items.to_vec(),
+        },
+    );
+    let path = playlist_cache_path();
+    let tmp = path.with_extension("json.tmp");
+    let bytes = serde_json::to_vec_pretty(&cache)?;
+    fs::write(&tmp, &bytes)
+        .with_context(|| format!("failed to write {}", tmp.display()))?;
+    fs::rename(&tmp, &path)
+        .with_context(|| format!("failed to rename into {}", path.display()))?;
+    Ok(())
 }
 
 /// Load all history records, deduplicate by video_id keeping the most recent
