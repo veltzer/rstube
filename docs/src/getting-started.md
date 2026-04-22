@@ -58,8 +58,6 @@ playlist a video was in.
 
 ## 5. Useful extras
 
-- `--pick` on `play new` opens a playlist chooser first, so you can
-  override the default "first playlist with anything unseen" behaviour.
 - `--refresh` on `play new` or `play any` bypasses the 24h cache and
   refetches from YouTube.
 - `rstube playlists fetch` pre-warms the cache for all configured

@@ -49,12 +49,11 @@ config.
 
 Configured videos are appended to the merged pool after playlists:
 
-- `rstube play new` — scans configured playlists first for unseen items;
-  if none are found, scans the videos list.
-- `rstube play new --pick` — the chooser lists every playlist plus a
-  final "videos" entry for the bucket.
-- `rstube play any` — merges all playlists and videos into one picker.
-- `rstube show new` — prints every unwatched video across all sources.
+- `rstube play new` — one picker of every unseen video across all playlists
+  and individually-configured videos.
+- `rstube play any` — one picker of every video across the same sources,
+  history-filtering disabled.
+- `rstube show new` — text-only equivalent of `play new`.
 
 If a configured video has already been played (appears in history), it
 counts as "seen" and is filtered out of `play new` / `show new`. Use

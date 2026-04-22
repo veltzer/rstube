@@ -65,14 +65,11 @@ enum PlayAction {
         #[arg(short, long)]
         verbose: bool,
     },
-    /// Pick a never-before-watched video from a configured playlist
+    /// Pick a never-before-watched video from anywhere in your configured playlists and videos
     New {
         /// Bypass the playlist cache and refetch from YouTube
         #[arg(long)]
         refresh: bool,
-        /// Open a chooser to select which playlist to use
-        #[arg(long)]
-        pick: bool,
         /// Show mpv's terminal status line and verbose log output
         #[arg(short, long)]
         verbose: bool,
@@ -163,7 +160,7 @@ fn main() -> Result<()> {
 fn run_play(action: PlayAction) -> Result<()> {
     match action {
         PlayAction::Partial { verbose } => run_play_partial(verbose),
-        PlayAction::New { refresh, pick, verbose } => run_play_new(refresh, pick, verbose),
+        PlayAction::New { refresh, verbose } => run_play_new(refresh, verbose),
         PlayAction::Any { refresh, verbose } => run_play_any(refresh, verbose),
     }
 }
@@ -252,78 +249,17 @@ fn run_play_any(refresh: bool, verbose: bool) -> Result<()> {
     })
 }
 
-fn run_play_new(refresh: bool, pick: bool, verbose: bool) -> Result<()> {
-    let cfg = config::load();
-    if cfg.playlists.is_empty() && cfg.videos.is_empty() {
-        bail!(
-            "nothing configured — add a playlist with `rstube playlists add <name> <url-or-id>` \
-             or a single video with `rstube videos add <name> <url-or-id>` \
-             (config: {})",
-            config::config_path().display()
-        );
+fn run_play_new(refresh: bool, verbose: bool) -> Result<()> {
+    let merged = load_merged_playlists(refresh)?;
+    let seen = state::played_video_ids();
+    let unseen = filter_unseen(merged, &seen);
+    if unseen.is_empty() {
+        eprintln!("No new videos — every item in your playlists/videos is in history.");
+        eprintln!("(try `rstube play new --refresh` to refetch)");
+        return Ok(());
     }
 
-    let seen = state::played_video_ids();
-    // Scannable sources: each configured playlist is one, then a synthetic
-    // "videos" bucket holding all individually-configured videos.
-    let video_bucket_name = "videos";
-    let has_videos = !cfg.videos.is_empty();
-
-    let (chosen_name, unseen) = if pick {
-        let mut names: Vec<String> = cfg.playlists.iter().map(|p| p.name.clone()).collect();
-        if has_videos {
-            names.push(video_bucket_name.to_owned());
-        }
-        let Some(idx) = tui::run_playlist_chooser(names.clone())? else {
-            return Ok(());
-        };
-        if idx < cfg.playlists.len() {
-            let pl = &cfg.playlists[idx];
-            let items = load_playlist_items(&pl.url, refresh)?;
-            let unseen = filter_unseen(items, &seen);
-            if unseen.is_empty() {
-                eprintln!("No new videos in playlist \"{}\".", pl.name);
-                return Ok(());
-            }
-            (pl.name.clone(), unseen)
-        } else {
-            let items = load_configured_videos(&cfg.videos, refresh);
-            let unseen = filter_unseen(items, &seen);
-            if unseen.is_empty() {
-                eprintln!("No new videos in the videos list.");
-                return Ok(());
-            }
-            (video_bucket_name.to_owned(), unseen)
-        }
-    } else {
-        let mut found: Option<(String, Vec<playlist::PlaylistItem>)> = None;
-        for pl in &cfg.playlists {
-            let items = load_playlist_items(&pl.url, refresh)?;
-            let unseen = filter_unseen(items, &seen);
-            if !unseen.is_empty() {
-                found = Some((pl.name.clone(), unseen));
-                break;
-            }
-            eprintln!("Playlist \"{}\": no new videos, skipping.", pl.name);
-        }
-        if found.is_none() && has_videos {
-            let items = load_configured_videos(&cfg.videos, refresh);
-            let unseen = filter_unseen(items, &seen);
-            if !unseen.is_empty() {
-                found = Some((video_bucket_name.to_owned(), unseen));
-            } else {
-                eprintln!("Videos list: no new videos, skipping.");
-            }
-        }
-        let Some(found) = found else {
-            eprintln!("No new videos in any configured playlist or videos list.");
-            eprintln!("(try `rstube play new --refresh` to refetch, or `--pick` to choose a source)");
-            return Ok(());
-        };
-        found
-    };
-
-    eprintln!("Playing from \"{chosen_name}\" ({} unseen).", unseen.len());
+    eprintln!("{} unseen videos.", unseen.len());
 
     let Some(sel) = tui::run_playlist_picker(unseen)? else {
         return Ok(());
@@ -599,23 +535,6 @@ fn fetch_video_and_cache(video_id: &str) -> Result<playlist::PlaylistItem> {
         eprintln!("warning: failed to save video cache: {e}");
     }
     Ok(item)
-}
-
-/// Resolve all configured videos into `PlaylistItem`s, preserving config
-/// order. Individual fetch failures are printed as warnings and the offending
-/// video is skipped — one broken entry shouldn't hide the rest.
-fn load_configured_videos(
-    videos: &[config::NamedVideo],
-    refresh: bool,
-) -> Vec<playlist::PlaylistItem> {
-    let mut out = Vec::with_capacity(videos.len());
-    for v in videos {
-        match load_configured_video(&v.video_id, refresh) {
-            Ok(item) => out.push(item),
-            Err(e) => eprintln!("warning: skipping configured video \"{}\": {e}", v.name),
-        }
-    }
-    out
 }
 
 /// Load a single configured video's metadata — from cache if fresh, else

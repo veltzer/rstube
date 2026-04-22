@@ -5,7 +5,7 @@ Top-level commands in `rstube`.
 | Command | Description |
 |---|---|
 | `rstube play partial [-v]` | Pick a partially-watched video from history |
-| `rstube play new [--refresh] [--pick] [-v]` | Pick an unwatched video from a configured playlist or video |
+| `rstube play new [--refresh] [-v]` | Pick an unwatched video from anywhere in your configured playlists and videos |
 | `rstube play any [--refresh] [-v]` | Pick any video across all configured playlists and videos |
 | `rstube show finished [-d]` | Print videos watched to the end (`-d` adds timing/percentage) |
 | `rstube show partial` | Print videos partially watched (same set as `play partial`) |
@@ -28,15 +28,11 @@ message and exits.
 
 ### `play new`
 
-- Scans configured playlists in order, then the videos list; opens the
-  picker on the first source with any unseen video.
-- `--pick` — open a chooser TUI first listing every playlist plus a
-  final "videos" bucket for individually-configured videos. Select the
-  one you want.
-- `--refresh` — bypass the 24h cache and refetch whichever source is
-  being used.
-- If every playlist and the videos list have zero unseen items, prints a
-  message and exits.
+- Merges every video from every configured playlist and every configured
+  video into one picker, filtered to show only videos not in your watch
+  history. Same underlying set as `show new`.
+- `--refresh` — bypass the 24h cache and refetch all sources.
+- If nothing is unseen, prints a message and exits.
 
 ### `play any`
 
