@@ -489,7 +489,7 @@ fn show_history(limit: usize) -> Result<()> {
         let title = entry.title.as_deref().unwrap_or(&entry.url);
         let unfinished = entry.ts_end == 0;
         // Unfinished session: phase-1 row with no phase-2 — mpv died before
-        // writing final state. Fall back to positions.json for the last
+        // writing final state. Fall back to positions.redb for the last
         // tracker-written position.
         let effective_pos = if unfinished {
             state::get_position(&entry.video_id)

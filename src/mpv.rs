@@ -132,7 +132,7 @@ fn compute_resume(key: &str, duration_hint: Option<f64>) -> Option<f64> {
 }
 
 /// Background thread: connect to mpv's IPC socket, poll `time-pos` +
-/// `duration` every POLL_INTERVAL_SECS, persist to positions.json.
+/// `duration` every POLL_INTERVAL_SECS, persist to positions.redb.
 fn spawn_tracker(
     sock_path: PathBuf,
     key: String,

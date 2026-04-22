@@ -135,7 +135,7 @@ fn synthetic_entry_from_position(video_id: &str, pos: &state::Position) -> Histo
 }
 
 /// History entries eligible as "partial": most recent partially-watched
-/// session per video. Unions history-derived entries with positions.json so a
+/// session per video. Unions history-derived entries with positions.redb so a
 /// session that never got a history line (older binary, or the tracker wrote
 /// positions but the phase-1 history line was lost) still shows up.
 pub fn partial_candidates() -> Vec<HistoryEntry> {
@@ -170,7 +170,7 @@ pub fn partial_candidates() -> Vec<HistoryEntry> {
 }
 
 /// History entries that count as "finished": most recent finished session
-/// per video. Also unions with positions.json for parity with
+/// per video. Also unions with positions.redb for parity with
 /// `partial_candidates`.
 pub fn finished_candidates() -> Vec<HistoryEntry> {
     let mut by_id: HashMap<String, HistoryEntry> = HashMap::new();

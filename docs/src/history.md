@@ -33,10 +33,9 @@ You will not lose your position if mpv crashes, your terminal is killed,
 or your laptop runs out of battery mid-video.
 
 While mpv is playing, a background thread polls the current position over
-mpv's IPC socket every 30 seconds and writes it to `positions.json`. The
-write is atomic (tmp-then-rename), so even a power cut mid-write cannot
-corrupt the file — you end up with either the previous snapshot or the
-new one, never a partial.
+mpv's IPC socket every 30 seconds and upserts it into `positions.redb`.
+redb commits use MVCC + fsync, so even a power cut mid-write cannot
+corrupt the file — the commit either lands fully or not at all.
 
 Worst case: you lose **up to 30 seconds** of progress — the time since
 the last tick. `rstube play partial` will still show the video, and it
@@ -64,7 +63,7 @@ for two properties:
 - `time-pos` — the current playhead, in seconds
 - `duration` — the video's total length, in seconds (if known)
 
-Whatever mpv reports is written to `positions.json` as-is. The tracker
+Whatever mpv reports is written to `positions.redb` as-is. The tracker
 doesn't track a playing/paused/buffering state of its own — it just
 snapshots whatever mpv says the playhead is. That means:
 
@@ -82,24 +81,15 @@ uncleanly, the last periodic snapshot is what survives.
 
 A single local file, resolved in this order:
 
-1. `$RSTUBE_STATE_DIR/positions.json` if that env var is set
-2. `$XDG_STATE_HOME/rstube/positions.json`
-3. `$HOME/.local/state/rstube/positions.json`
+1. `$RSTUBE_STATE_DIR/positions.redb` if that env var is set
+2. `$XDG_STATE_HOME/rstube/positions.redb`
+3. `$HOME/.local/state/rstube/positions.redb`
 
-On most Linux systems that's `~/.local/state/rstube/positions.json`.
+On most Linux systems that's `~/.local/state/rstube/positions.redb`.
 
-Format — a flat JSON object keyed by YouTube video id:
-
-```json
-{
-  "dQw4w9WgXcQ": {
-    "position_secs": 127.3,
-    "duration_secs": 213.0,
-    "updated_at": 1713789012
-  },
-  "another-id": { "...": "..." }
-}
-```
+Storage is a [redb](https://www.redb.org) key/value database. Keys are
+YouTube video ids (strings); values are JSON-serialized records with
+these fields:
 
 - `position_secs` — where the playhead was at the last tick (seconds).
 - `duration_secs` — the total length if mpv has reported it yet, else
@@ -107,9 +97,14 @@ Format — a flat JSON object keyed by YouTube video id:
 - `updated_at` — unix timestamp of the last tick. Not used for anything
   user-visible; useful when debugging.
 
-The file is rewritten in full on every update, via a tmp-then-rename.
-That's atomic with respect to power loss: you end up with either the
-old version or the new one, never a torn write.
+Each tick performs a single per-key update inside a redb write
+transaction. redb uses MVCC + copy-on-write B-trees with an fsync'd
+commit, so a write either lands fully or not at all; a crash or power
+cut never leaves the file in a torn state.
+
+The file isn't human-readable, so `cat` won't work. To inspect, use
+`redb dump` (from the `redb-cli` crate) or any small Rust program that
+opens the same table definition.
 
 ## Two-phase history writes
 
@@ -135,7 +130,7 @@ sessions (rstube/mpv died before reaching phase-2) survive as-is.
 
 **User-visible effect.** `rstube history` shows unclean-exit sessions
 with a `[unclean exit]` suffix, and pulls the last-known position from
-`positions.json` so you can still see roughly where you were.
+`positions.redb` so you can still see roughly where you were.
 
 ### Why not a SIGINT / SIGTERM handler?
 
@@ -168,9 +163,9 @@ For rstube specifically:
 
 - We already tolerate ~30 seconds of position loss from the tracker's
   30s poll interval.
-- A lost phase-1 line for a session whose `positions.json` entry did
+- A lost phase-1 line for a session whose `positions.redb` entry did
   flush means the session is missing from `rstube history` — but `play
-  resume` still works, because resume reads from `positions.json`.
+  resume` still works, because resume reads from `positions.redb`.
 - `fsync` serializes IO, costing 5–50ms per write on a spinning disk;
   cheap on SSD but not free.
 
@@ -183,7 +178,7 @@ than the gap we just closed (unclean exit leaves no record at all).
 
 | File | Contents |
 |---|---|
-| `positions.json` | Resume positions (see above) |
+| `positions.redb` | Resume positions (see above) |
 | `history.jsonl` | One JSON line per playback session, append-only |
 | `playlist_cache.json` | Cached playlist item lists, keyed by URL |
 
@@ -192,7 +187,7 @@ All three live under the same state directory (`RSTUBE_STATE_DIR` →
 environment](files.md) for the full env-var story.
 
 Safe to delete any of these — rstube recreates them on demand. Deleting
-`positions.json` just means `play partial` will be empty until you watch
+`positions.redb` just means `play partial` will be empty until you watch
 something; deleting `history.jsonl` clears the log.
 
 ## Syncing across machines
@@ -200,7 +195,7 @@ something; deleting `history.jsonl` clears the log.
 rstube doesn't sync anywhere. If you want the same positions on another
 machine, sync the state directory yourself — `syncthing` pointed at
 `~/.local/state/rstube`, or a periodic `rsync`, or just `scp
-~/.local/state/rstube/positions.json` before switching machines.
+~/.local/state/rstube/positions.redb` before switching machines.
 
 Nothing rstube writes is tied to a machine or user account; the file is
 portable.
