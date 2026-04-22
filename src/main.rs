@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 #[derive(Parser)]
 #[command(name = "rstube")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Resume and replay YouTube videos via mpv, with position tracking")]
+#[command(about = "Play YouTube videos via mpv, with position tracking and playlist-aware pickers")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -149,7 +149,7 @@ fn run_play_any(refresh: bool) -> Result<()> {
 
     eprintln!("{} total videos across {} playlists.", merged.len(), cfg.playlists.len());
 
-    let Some(sel) = tui::run_playnew_picker(merged)? else {
+    let Some(sel) = tui::run_playlist_picker(merged)? else {
         return Ok(());
     };
     ensure_tool("mpv")?;
@@ -199,7 +199,7 @@ fn run_play_new(refresh: bool, pick: bool) -> Result<()> {
         }
         let Some(found) = found else {
             eprintln!("No new videos in any configured playlist.");
-            eprintln!("(try `rstube playnew --refresh` to refetch, or `--pick` to choose a playlist)");
+            eprintln!("(try `rstube play new --refresh` to refetch, or `--pick` to choose a playlist)");
             return Ok(());
         };
         found
@@ -207,7 +207,7 @@ fn run_play_new(refresh: bool, pick: bool) -> Result<()> {
 
     eprintln!("Playing from \"{chosen_name}\" ({} unseen).", unseen.len());
 
-    let Some(sel) = tui::run_playnew_picker(unseen)? else {
+    let Some(sel) = tui::run_playlist_picker(unseen)? else {
         return Ok(());
     };
     ensure_tool("mpv")?;

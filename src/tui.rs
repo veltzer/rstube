@@ -71,8 +71,9 @@ pub fn run_resume_picker() -> Result<Option<Selection>> {
     run(rows, "resume")
 }
 
-/// Playnew picker: caller is expected to have already filtered out history.
-pub fn run_playnew_picker(items: Vec<PlaylistItem>) -> Result<Option<Selection>> {
+/// Picker over playlist items. Caller decides what to include (e.g. unseen-only
+/// for `play new`, or everything for `play any`).
+pub fn run_playlist_picker(items: Vec<PlaylistItem>) -> Result<Option<Selection>> {
     let rows: Vec<PickerRow> = items
         .into_iter()
         .map(|it| PickerRow {
@@ -84,7 +85,7 @@ pub fn run_playnew_picker(items: Vec<PlaylistItem>) -> Result<Option<Selection>>
             last_played: 0,
         })
         .collect();
-    run(rows, "playnew")
+    run(rows, "play")
 }
 
 /// Minimal chooser over a list of strings. Returns the selected index, or None
