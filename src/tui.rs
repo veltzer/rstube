@@ -87,6 +87,71 @@ pub fn run_playnew_picker(items: Vec<PlaylistItem>) -> Result<Option<Selection>>
     run(rows, "playnew")
 }
 
+/// Minimal chooser over a list of strings. Returns the selected index, or None
+/// if the user quit.
+pub fn run_playlist_chooser(names: Vec<String>) -> Result<Option<usize>> {
+    if names.is_empty() {
+        return Ok(None);
+    }
+    let mut terminal = setup_terminal().context("failed to init terminal")?;
+    let result = chooser_loop(&mut terminal, &names);
+    restore_terminal(&mut terminal)?;
+    result
+}
+
+fn chooser_loop(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    names: &[String],
+) -> Result<Option<usize>> {
+    let mut list_state = ListState::default();
+    list_state.select(Some(0));
+    loop {
+        terminal.draw(|f| {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(3), Constraint::Length(1)])
+                .split(f.area());
+            let items: Vec<ListItem> = names.iter().map(|n| ListItem::new(n.clone())).collect();
+            let list = List::new(items)
+                .block(Block::default().borders(Borders::ALL).title(" choose playlist "))
+                .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+                .highlight_symbol("▶ ");
+            f.render_stateful_widget(list, chunks[0], &mut list_state);
+            let hints = Paragraph::new("↑↓/jk move • Enter select • q quit")
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(hints, chunks[1]);
+        })?;
+
+        if !event::poll(Duration::from_millis(200))? {
+            continue;
+        }
+        let Event::Key(key) = event::read()? else { continue };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            return Ok(None);
+        }
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => return Ok(None),
+            KeyCode::Down | KeyCode::Char('j') => {
+                let cur = list_state.selected().unwrap_or(0);
+                if cur + 1 < names.len() {
+                    list_state.select(Some(cur + 1));
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let cur = list_state.selected().unwrap_or(0);
+                if cur > 0 {
+                    list_state.select(Some(cur - 1));
+                }
+            }
+            KeyCode::Enter => return Ok(list_state.selected()),
+            _ => {}
+        }
+    }
+}
+
 fn run(rows: Vec<PickerRow>, label: &str) -> Result<Option<Selection>> {
     if rows.is_empty() {
         return Ok(None);

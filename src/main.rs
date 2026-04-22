@@ -27,27 +27,34 @@ enum Commands {
     },
     /// Open TUI picker to resume an in-progress video from history
     Resume,
-    /// Open TUI picker to play a never-before-watched video from the playlist
+    /// Open TUI picker to play a never-before-watched video from a playlist
     Playnew {
         /// Bypass the playlist cache and refetch from YouTube
         #[arg(long)]
         refresh: bool,
+        /// Open a chooser to select which playlist to use
+        #[arg(long)]
+        pick: bool,
     },
-    /// Manage the configured YouTube playlist (used by `playnew`)
-    Playlist {
+    /// Manage the configured YouTube playlists (used by `playnew`)
+    Playlists {
         #[command(subcommand)]
-        action: PlaylistAction,
+        action: PlaylistsAction,
     },
     /// Print full build/version info (git sha, rustc, build time)
     Version,
 }
 
 #[derive(Subcommand)]
-enum PlaylistAction {
-    /// Set the playlist URL or bare playlist id
-    Set { url_or_id: String },
-    /// Print the configured playlist
-    Show,
+enum PlaylistsAction {
+    /// Add a playlist under a short name
+    Add { name: String, url_or_id: String },
+    /// Remove a playlist by name
+    Remove { name: String },
+    /// List configured playlists in order
+    List,
+    /// Print a single playlist's URL by name
+    Show { name: String },
 }
 
 fn main() -> Result<()> {
@@ -59,8 +66,8 @@ fn main() -> Result<()> {
         }
         Commands::History { limit } => show_history(limit),
         Commands::Resume => run_resume(),
-        Commands::Playnew { refresh } => run_playnew(refresh),
-        Commands::Playlist { action } => run_playlist(action),
+        Commands::Playnew { refresh, pick } => run_playnew(refresh, pick),
+        Commands::Playlists { action } => run_playlists(action),
     }
 }
 
@@ -79,43 +86,51 @@ fn run_resume() -> Result<()> {
 
 const PLAYLIST_CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 
-fn run_playnew(refresh: bool) -> Result<()> {
+fn run_playnew(refresh: bool, pick: bool) -> Result<()> {
     let cfg = config::load();
-    let Some(url) = cfg.playlist_url else {
+    if cfg.playlists.is_empty() {
         bail!(
-            "no playlist configured — set one with `rstube playlist set <url-or-id>` \
+            "no playlists configured — add one with `rstube playlists add <name> <url-or-id>` \
              (config: {})",
             config::config_path().display()
         );
-    };
-
-    let items = if refresh {
-        fetch_and_cache(&url)?
-    } else {
-        match state::load_playlist_cache(&url) {
-            Some(entry) if state::now_secs().saturating_sub(entry.fetched_at) < PLAYLIST_CACHE_TTL_SECS => {
-                let age_mins = state::now_secs().saturating_sub(entry.fetched_at) / 60;
-                eprintln!("Using cached playlist ({} items, {}m old — rerun with --refresh to refetch).", entry.items.len(), age_mins);
-                entry.items
-            }
-            _ => fetch_and_cache(&url)?,
-        }
-    };
-
-    if items.is_empty() {
-        bail!("playlist returned no items: {url}");
     }
 
     let seen = state::played_video_ids();
-    let unseen: Vec<playlist::PlaylistItem> = items
-        .into_iter()
-        .filter(|it| !seen.contains(&it.id))
-        .collect();
-    if unseen.is_empty() {
-        eprintln!("No new videos — every item in the playlist is already in your history.");
-        eprintln!("(try `rstube playnew --refresh` to refetch the playlist)");
-        return Ok(());
-    }
+
+    let (chosen_name, unseen) = if pick {
+        let names: Vec<String> = cfg.playlists.iter().map(|p| p.name.clone()).collect();
+        let Some(idx) = tui::run_playlist_chooser(names)? else {
+            return Ok(());
+        };
+        let pl = &cfg.playlists[idx];
+        let items = load_playlist_items(&pl.url, refresh)?;
+        let unseen = filter_unseen(items, &seen);
+        if unseen.is_empty() {
+            eprintln!("No new videos in playlist \"{}\".", pl.name);
+            return Ok(());
+        }
+        (pl.name.clone(), unseen)
+    } else {
+        let mut found: Option<(String, Vec<playlist::PlaylistItem>)> = None;
+        for pl in &cfg.playlists {
+            let items = load_playlist_items(&pl.url, refresh)?;
+            let unseen = filter_unseen(items, &seen);
+            if !unseen.is_empty() {
+                found = Some((pl.name.clone(), unseen));
+                break;
+            }
+            eprintln!("Playlist \"{}\": no new videos, skipping.", pl.name);
+        }
+        let Some(found) = found else {
+            eprintln!("No new videos in any configured playlist.");
+            eprintln!("(try `rstube playnew --refresh` to refetch, or `--pick` to choose a playlist)");
+            return Ok(());
+        };
+        found
+    };
+
+    eprintln!("Playing from \"{chosen_name}\" ({} unseen).", unseen.len());
 
     let Some(sel) = tui::run_playnew_picker(unseen)? else {
         return Ok(());
@@ -129,9 +144,34 @@ fn run_playnew(refresh: bool) -> Result<()> {
     })
 }
 
+fn load_playlist_items(url: &str, refresh: bool) -> Result<Vec<playlist::PlaylistItem>> {
+    if refresh {
+        return fetch_and_cache(url);
+    }
+    match state::load_playlist_cache(url) {
+        Some(entry) if state::now_secs().saturating_sub(entry.fetched_at) < PLAYLIST_CACHE_TTL_SECS => {
+            let age_mins = state::now_secs().saturating_sub(entry.fetched_at) / 60;
+            eprintln!(
+                "Using cached playlist for {url} ({} items, {}m old).",
+                entry.items.len(),
+                age_mins
+            );
+            Ok(entry.items)
+        }
+        _ => fetch_and_cache(url),
+    }
+}
+
+fn filter_unseen(
+    items: Vec<playlist::PlaylistItem>,
+    seen: &std::collections::HashSet<String>,
+) -> Vec<playlist::PlaylistItem> {
+    items.into_iter().filter(|it| !seen.contains(&it.id)).collect()
+}
+
 fn fetch_and_cache(url: &str) -> Result<Vec<playlist::PlaylistItem>> {
     ensure_tool("yt-dlp")?;
-    eprintln!("Fetching playlist…");
+    eprintln!("Fetching playlist {url}…");
     let items = playlist::fetch(url)?;
     if let Err(e) = state::save_playlist_cache(url, &items) {
         eprintln!("warning: failed to save playlist cache: {e}");
@@ -139,26 +179,49 @@ fn fetch_and_cache(url: &str) -> Result<Vec<playlist::PlaylistItem>> {
     Ok(items)
 }
 
-fn run_playlist(action: PlaylistAction) -> Result<()> {
+fn run_playlists(action: PlaylistsAction) -> Result<()> {
     match action {
-        PlaylistAction::Set { url_or_id } => {
+        PlaylistsAction::Add { name, url_or_id } => {
             let url = config::normalize_playlist(&url_or_id)?;
             let mut cfg = config::load();
-            cfg.playlist_url = Some(url.clone());
+            if cfg.playlists.iter().any(|p| p.name == name) {
+                bail!("playlist named \"{name}\" already exists");
+            }
+            cfg.playlists.push(config::NamedPlaylist { name: name.clone(), url: url.clone() });
             config::save(&cfg)?;
-            println!("playlist set to {url}");
+            println!("added \"{name}\" → {url}");
             println!("(stored in {})", config::config_path().display());
             Ok(())
         }
-        PlaylistAction::Show => {
-            let cfg = config::load();
-            match cfg.playlist_url {
-                Some(url) => println!("{url}"),
-                None => {
-                    println!("(no playlist configured)");
-                    println!("(config path: {})", config::config_path().display());
-                }
+        PlaylistsAction::Remove { name } => {
+            let mut cfg = config::load();
+            let before = cfg.playlists.len();
+            cfg.playlists.retain(|p| p.name != name);
+            if cfg.playlists.len() == before {
+                bail!("no playlist named \"{name}\"");
             }
+            config::save(&cfg)?;
+            println!("removed \"{name}\"");
+            Ok(())
+        }
+        PlaylistsAction::List => {
+            let cfg = config::load();
+            if cfg.playlists.is_empty() {
+                println!("(no playlists configured)");
+                println!("(config path: {})", config::config_path().display());
+                return Ok(());
+            }
+            for (i, pl) in cfg.playlists.iter().enumerate() {
+                println!("{:>2}. {}  {}", i + 1, pl.name, pl.url);
+            }
+            Ok(())
+        }
+        PlaylistsAction::Show { name } => {
+            let cfg = config::load();
+            let Some(pl) = cfg.playlists.iter().find(|p| p.name == name) else {
+                bail!("no playlist named \"{name}\"");
+            };
+            println!("{}", pl.url);
             Ok(())
         }
     }

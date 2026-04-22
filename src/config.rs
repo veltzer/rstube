@@ -3,9 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NamedPlaylist {
+    pub name: String,
+    pub url: String,
+}
+
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct Config {
     #[serde(default)]
+    pub playlists: Vec<NamedPlaylist>,
+    /// Legacy single-playlist field. Migrated into `playlists` on load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub playlist_url: Option<String>,
 }
 
@@ -30,7 +39,13 @@ pub fn config_path() -> PathBuf {
 pub fn load() -> Config {
     let path = config_path();
     let Ok(bytes) = fs::read_to_string(&path) else { return Config::default(); };
-    toml::from_str(&bytes).unwrap_or_default()
+    let mut cfg: Config = toml::from_str(&bytes).unwrap_or_default();
+    if let Some(legacy) = cfg.playlist_url.take()
+        && cfg.playlists.is_empty()
+    {
+        cfg.playlists.push(NamedPlaylist { name: "default".into(), url: legacy });
+    }
+    cfg
 }
 
 pub fn save(cfg: &Config) -> Result<()> {
