@@ -43,6 +43,22 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
     let ts_start = state::now_secs();
     let mut child = cmd.spawn().context("failed to spawn mpv")?;
 
+    // Phase 1: write an open-session history line immediately. `ts_end = 0`
+    // marks it as not-yet-finished. If rstube dies without reaching the
+    // phase-2 write below (power loss, SIGKILL), this row still survives —
+    // the session will show up in `rstube history` and count as "seen" in
+    // `play new` filtering.
+    let _ = state::append_history(&HistoryEntry {
+        ts_start,
+        ts_end: 0,
+        video_id: key.clone(),
+        url: req.url.to_owned(),
+        title: req.title.map(|s| s.to_owned()),
+        duration_secs: req.duration_secs,
+        position_on_exit: 0.0,
+        audio_only: req.audio_only,
+    });
+
     let stop = Arc::new(AtomicBool::new(false));
     let last_pos: Arc<Mutex<Option<(f64, Option<f64>)>>> = Arc::new(Mutex::new(None));
 

@@ -195,6 +195,30 @@ pub fn save_playlist_cache(url: &str, items: &[PlaylistItem]) -> Result<()> {
     Ok(())
 }
 
+/// Load history sessions, merging the phase-1 (session-start) and phase-2
+/// (session-end) lines of each session. A session is identified by
+/// `(video_id, ts_start)`; the line with the greater `ts_end` wins, so a
+/// phase-2 line (which has the real `ts_end` and `position_on_exit`) always
+/// replaces its matching phase-1 line. Sessions that only ever got a phase-1
+/// line (mpv killed by power loss, SIGKILL, etc.) are retained as-is.
+pub fn load_history_sessions() -> Vec<HistoryEntry> {
+    let mut by_key: HashMap<(String, u64), HistoryEntry> = HashMap::new();
+    for e in load_all_history() {
+        let key = (e.video_id.clone(), e.ts_start);
+        by_key
+            .entry(key)
+            .and_modify(|existing| {
+                if e.ts_end >= existing.ts_end {
+                    *existing = e.clone();
+                }
+            })
+            .or_insert(e);
+    }
+    let mut out: Vec<HistoryEntry> = by_key.into_values().collect();
+    out.sort_by_key(|e| e.ts_start);
+    out
+}
+
 /// Load all history records in file order. Silently skips malformed lines.
 pub fn load_all_history() -> Vec<HistoryEntry> {
     let path = history_path();

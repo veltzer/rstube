@@ -387,23 +387,32 @@ fn show_history(limit: usize) -> Result<()> {
         println!("(no history yet — path: {})", path.display());
         return Ok(());
     }
-    let contents = std::fs::read_to_string(&path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    let lines: Vec<&str> = contents.lines().filter(|l| !l.trim().is_empty()).collect();
-    let start = lines.len().saturating_sub(limit);
-    for line in &lines[start..] {
-        let entry: state::HistoryEntry = match serde_json::from_str(line) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+    let sessions = state::load_history_sessions();
+    let start = sessions.len().saturating_sub(limit);
+    for entry in &sessions[start..] {
         let title = entry.title.as_deref().unwrap_or(&entry.url);
-        let pos = fmt_dur(entry.position_on_exit);
-        let dur = entry.duration_secs.map(fmt_dur).unwrap_or_else(|| "--:--".into());
-        let pct = entry.duration_secs
+        let unfinished = entry.ts_end == 0;
+        // Unfinished session: phase-1 row with no phase-2 — mpv died before
+        // writing final state. Fall back to positions.json for the last
+        // tracker-written position.
+        let effective_pos = if unfinished {
+            state::get_position(&entry.video_id)
+                .map(|p| p.position_secs)
+                .unwrap_or(entry.position_on_exit)
+        } else {
+            entry.position_on_exit
+        };
+        let effective_dur = entry.duration_secs.or_else(|| {
+            state::get_position(&entry.video_id).and_then(|p| p.duration_secs)
+        });
+        let pos = fmt_dur(effective_pos);
+        let dur = effective_dur.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+        let pct = effective_dur
             .filter(|d| *d > 0.0)
-            .map(|d| format!(" ({:.0}%)", 100.0 * entry.position_on_exit / d))
+            .map(|d| format!(" ({:.0}%)", 100.0 * effective_pos / d))
             .unwrap_or_default();
-        println!("[{pos}/{dur}{pct}] {title}");
+        let marker = if unfinished { " [unclean exit]" } else { "" };
+        println!("[{pos}/{dur}{pct}] {title}{marker}");
     }
     Ok(())
 }
