@@ -18,6 +18,7 @@ use crate::playlist::PlaylistItem;
 use crate::state::{self, HistoryEntry};
 
 pub struct Selection {
+    pub video_id: String,
     pub url: String,
     pub title: Option<String>,
     pub duration_secs: Option<f64>,
@@ -71,7 +72,20 @@ pub fn is_finished(e: &HistoryEntry) -> bool {
 /// (count-before-picker, selection). `count` lets the caller distinguish
 /// "nothing to resume" from "user quit the picker".
 pub fn run_partial_picker() -> Result<(usize, Option<Selection>)> {
-    let rows: Vec<PickerRow> = partial_candidates()
+    run_picker_over(partial_candidates(), "partial")
+}
+
+/// Finished picker: history entries watched to the tail margin. Same return
+/// shape as `run_partial_picker`.
+pub fn run_finished_picker() -> Result<(usize, Option<Selection>)> {
+    run_picker_over(finished_candidates(), "finished")
+}
+
+fn run_picker_over(
+    entries: Vec<HistoryEntry>,
+    label: &str,
+) -> Result<(usize, Option<Selection>)> {
+    let rows: Vec<PickerRow> = entries
         .into_iter()
         .map(|e| PickerRow {
             video_id: e.video_id,
@@ -83,7 +97,7 @@ pub fn run_partial_picker() -> Result<(usize, Option<Selection>)> {
         })
         .collect();
     let count = rows.len();
-    let sel = run(rows, "partial")?;
+    let sel = run(rows, label)?;
     Ok((count, sel))
 }
 
@@ -299,6 +313,7 @@ fn main_loop(
                         && let Some(row) = filtered.get(idx)
                     {
                         return Ok(Some(Selection {
+                            video_id: row.video_id.clone(),
                             url: row.url.clone(),
                             title: row.title.clone(),
                             duration_secs: row.duration_secs,

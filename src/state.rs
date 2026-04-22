@@ -145,6 +145,40 @@ pub fn append_history(entry: &HistoryEntry) -> Result<()> {
     Ok(())
 }
 
+/// Remove every line in history.jsonl whose `video_id` matches. Returns the
+/// number of lines removed. Malformed lines are preserved as-is (we only
+/// touch parseable JSON that matches the target id).
+pub fn forget_history(video_id: &str) -> Result<usize> {
+    let path = history_path();
+    let Ok(contents) = fs::read_to_string(&path) else { return Ok(0); };
+    let mut kept: Vec<&str> = Vec::new();
+    let mut removed = 0usize;
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<HistoryEntry>(trimmed) {
+            Ok(entry) if entry.video_id == video_id => {
+                removed += 1;
+            }
+            _ => kept.push(line),
+        }
+    }
+    if removed == 0 {
+        return Ok(0);
+    }
+    ensure_state_dir()?;
+    let tmp = path.with_extension("jsonl.tmp");
+    let body = kept.join("\n");
+    let payload = if body.is_empty() { String::new() } else { format!("{body}\n") };
+    fs::write(&tmp, payload.as_bytes())
+        .with_context(|| format!("failed to write {}", tmp.display()))?;
+    fs::rename(&tmp, &path)
+        .with_context(|| format!("failed to rename into {}", path.display()))?;
+    Ok(removed)
+}
+
 /// Extract a YouTube video id from a URL. Returns None if no recognizable id
 /// is present (in which case we fall back to the URL itself as a stable key).
 pub fn video_id_from_url(url: &str) -> Option<String> {

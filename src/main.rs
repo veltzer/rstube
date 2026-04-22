@@ -36,6 +36,11 @@ enum Commands {
         #[command(subcommand)]
         action: ShowAction,
     },
+    /// Forget a watched video so it re-appears as "new"
+    Forget {
+        #[command(subcommand)]
+        action: ForgetAction,
+    },
     /// Manage the configured YouTube playlists (used by `play new`)
     Playlists {
         #[command(subcommand)]
@@ -104,6 +109,14 @@ enum ShowAction {
 }
 
 #[derive(Subcommand)]
+enum ForgetAction {
+    /// Pick a partial video and forget it (removes history + saved position)
+    Partial,
+    /// Pick a finished video and forget it (removes history + saved position)
+    Finished,
+}
+
+#[derive(Subcommand)]
 enum PlaylistsAction {
     /// Add a playlist under a short name
     Add { name: String, url_or_id: String },
@@ -147,6 +160,7 @@ fn main() -> Result<()> {
         Commands::History { limit } => show_history(limit),
         Commands::Play { action } => run_play(action),
         Commands::Show { action } => run_show(action),
+        Commands::Forget { action } => run_forget(action),
         Commands::Playlists { action } => run_playlists(action),
         Commands::Videos { action } => run_videos(action),
         Commands::Complete { shell } => {
@@ -307,6 +321,36 @@ fn fetch_and_cache(url: &str) -> Result<Vec<playlist::PlaylistItem>> {
         eprintln!("warning: failed to save playlist cache: {e}");
     }
     Ok(items)
+}
+
+fn run_forget(action: ForgetAction) -> Result<()> {
+    let (count, sel) = match action {
+        ForgetAction::Partial => tui::run_partial_picker()?,
+        ForgetAction::Finished => tui::run_finished_picker()?,
+    };
+    if count == 0 {
+        let label = match action {
+            ForgetAction::Partial => "partial",
+            ForgetAction::Finished => "finished",
+        };
+        eprintln!("Nothing to forget — no {label} videos.");
+        return Ok(());
+    }
+    let Some(sel) = sel else {
+        return Ok(());
+    };
+    let title = sel.title.as_deref().unwrap_or(&sel.url);
+    let removed = state::forget_history(&sel.video_id)?;
+    match state::delete_position(&sel.video_id) {
+        Ok(()) => {}
+        Err(e) => eprintln!("warning: failed to remove position for {}: {e}", sel.video_id),
+    }
+    println!(
+        "Forgot \"{title}\" ({}): removed {removed} history line{} and cleared saved position.",
+        sel.video_id,
+        if removed == 1 { "" } else { "s" }
+    );
+    Ok(())
 }
 
 fn run_playlists(action: PlaylistsAction) -> Result<()> {

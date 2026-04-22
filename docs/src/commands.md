@@ -10,6 +10,8 @@ Top-level commands in `rstube`.
 | `rstube show finished [-d]` | Print videos watched to the end (`-d` adds timing/percentage) |
 | `rstube show partial` | Print videos partially watched (same set as `play partial`) |
 | `rstube show new [--refresh]` | Print videos in your playlists/videos list that you haven't started |
+| `rstube forget partial` | Pick a partial video and forget it (reappears as "new") |
+| `rstube forget finished` | Pick a finished video and forget it (reappears as "new") |
 | `rstube history [-n N]` | Show the last N history entries (default 20) |
 | `rstube playlists ...` | Manage configured playlists (see [Playlists](playlists.md)) |
 | `rstube videos ...` | Manage individually configured videos (see [Videos](videos.md)) |
@@ -89,6 +91,32 @@ pass `--refresh` to refetch. Format:
 Note: `new` counts any history entry as "seen", including phase-1
 open-session lines. If you *started* a video (even briefly), `show new`
 will not list it again.
+
+## `forget` subcommands
+
+Destructive: removes history and saved positions so a video re-appears as
+"new". Useful when you want to rewatch something from scratch, or when
+a partial got "stuck" and you'd rather start over.
+
+### `forget partial`
+
+Opens the same picker as `play partial`. Pressing **Enter** on a row
+forgets that video (no confirmation prompt — the deliberate selection is
+the confirmation). Pressing `q` / `Esc` quits without changes.
+
+What gets deleted:
+
+- Every line in `history.jsonl` with the selected video id.
+- The entry in `positions.redb` for that video.
+
+Afterwards: the video disappears from `show partial` / `play partial`
+and reappears in `show new` / `play new` (assuming it's in a configured
+playlist or videos list).
+
+### `forget finished`
+
+Same mechanism, operating on the `show finished` set. Useful for
+"I finished this but I want to watch it again later."
 
 ## Pickers — keys
 
