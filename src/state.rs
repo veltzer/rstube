@@ -195,26 +195,18 @@ pub fn save_playlist_cache(url: &str, items: &[PlaylistItem]) -> Result<()> {
     Ok(())
 }
 
-/// Load all history records, deduplicate by video_id keeping the most recent
-/// session, and return them sorted newest-first. Silently skips malformed lines.
-pub fn load_history_deduped() -> Vec<HistoryEntry> {
+/// Load all history records in file order. Silently skips malformed lines.
+pub fn load_all_history() -> Vec<HistoryEntry> {
     let path = history_path();
     let Ok(contents) = fs::read_to_string(&path) else { return Vec::new(); };
-    let mut by_id: HashMap<String, HistoryEntry> = HashMap::new();
+    let mut out = Vec::new();
     for line in contents.lines() {
         let line = line.trim();
         if line.is_empty() { continue; }
-        let Ok(entry) = serde_json::from_str::<HistoryEntry>(line) else { continue };
-        by_id
-            .entry(entry.video_id.clone())
-            .and_modify(|existing| {
-                if entry.ts_end > existing.ts_end {
-                    *existing = entry.clone();
-                }
-            })
-            .or_insert(entry);
+        if let Ok(entry) = serde_json::from_str::<HistoryEntry>(line) {
+            out.push(entry);
+        }
     }
-    let mut out: Vec<HistoryEntry> = by_id.into_values().collect();
-    out.sort_by(|a, b| b.ts_end.cmp(&a.ts_end));
     out
 }
+

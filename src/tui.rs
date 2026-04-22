@@ -54,11 +54,12 @@ fn is_in_progress(e: &HistoryEntry) -> bool {
     }
 }
 
-/// Resume picker: in-progress history entries.
-pub fn run_resume_picker() -> Result<Option<Selection>> {
-    let rows: Vec<PickerRow> = state::load_history_deduped()
+/// Resume picker: in-progress history entries. Returns (count-before-picker,
+/// selection). `count_before` lets the caller distinguish "nothing to resume"
+/// from "user quit the picker".
+pub fn run_resume_picker() -> Result<(usize, Option<Selection>)> {
+    let rows: Vec<PickerRow> = resume_candidates()
         .into_iter()
-        .filter(is_in_progress)
         .map(|e| PickerRow {
             video_id: e.video_id,
             url: e.url,
@@ -68,7 +69,34 @@ pub fn run_resume_picker() -> Result<Option<Selection>> {
             last_played: e.ts_end,
         })
         .collect();
-    run(rows, "resume")
+    let count = rows.len();
+    let sel = run(rows, "resume")?;
+    Ok((count, sel))
+}
+
+/// History entries eligible for resume: most recent in-progress session per
+/// video. Unlike a naive "most recent session", this prefers any session that
+/// was actually watched (≥ MIN_RESUME_SECS) over a more recent 0-second one —
+/// otherwise a quick accidental reopen clobbers the resumable entry.
+fn resume_candidates() -> Vec<HistoryEntry> {
+    use std::collections::HashMap;
+    let mut by_id: HashMap<String, HistoryEntry> = HashMap::new();
+    for e in state::load_all_history() {
+        if !is_in_progress(&e) {
+            continue;
+        }
+        by_id
+            .entry(e.video_id.clone())
+            .and_modify(|existing| {
+                if e.ts_end > existing.ts_end {
+                    *existing = e.clone();
+                }
+            })
+            .or_insert(e);
+    }
+    let mut out: Vec<HistoryEntry> = by_id.into_values().collect();
+    out.sort_by(|a, b| b.ts_end.cmp(&a.ts_end));
+    out
 }
 
 /// Picker over playlist items. Caller decides what to include (e.g. unseen-only

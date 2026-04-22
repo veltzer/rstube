@@ -41,6 +41,8 @@ enum Commands {
         /// Shell to generate completions for (bash, zsh, fish, elvish, powershell)
         shell: Shell,
     },
+    /// Install missing runtime dependencies (mpv, yt-dlp)
+    InstallDeps,
     /// Print full build/version info (git sha, rustc, build time)
     Version,
 }
@@ -97,6 +99,7 @@ fn main() -> Result<()> {
             print_completions(shell);
             Ok(())
         }
+        Commands::InstallDeps => run_install_deps(),
     }
 }
 
@@ -109,7 +112,13 @@ fn run_play(action: PlayAction) -> Result<()> {
 }
 
 fn run_play_resume() -> Result<()> {
-    let Some(sel) = tui::run_resume_picker()? else {
+    let (count, sel) = tui::run_resume_picker()?;
+    if count == 0 {
+        eprintln!("Nothing to resume — no videos with ≥10s of watch time in history.");
+        eprintln!("(use `rstube play new` or `rstube play any` to start a new video)");
+        return Ok(());
+    }
+    let Some(sel) = sel else {
         return Ok(());
     };
     ensure_tool("mpv")?;
@@ -422,6 +431,98 @@ fn which(name: &str) -> Result<()> {
         .status()?;
     if !status.success() {
         bail!("{name} not found");
+    }
+    Ok(())
+}
+
+fn tool_present(name: &str) -> bool {
+    which(name).is_ok()
+}
+
+/// Detect the system package manager. Returns the argv needed to install a
+/// single package (appending the package name is the caller's job). Returns
+/// None if no known manager is present.
+fn detect_system_installer() -> Option<Vec<String>> {
+    // Order matters: prefer distro-native over Homebrew on Linux.
+    let candidates: &[(&str, &[&str])] = &[
+        ("apt-get", &["sudo", "apt-get", "install", "-y"]),
+        ("dnf", &["sudo", "dnf", "install", "-y"]),
+        ("pacman", &["sudo", "pacman", "-S", "--noconfirm"]),
+        ("zypper", &["sudo", "zypper", "install", "-y"]),
+        ("brew", &["brew", "install"]),
+    ];
+    for (probe, argv) in candidates {
+        if tool_present(probe) {
+            return Some(argv.iter().map(|s| (*s).to_string()).collect());
+        }
+    }
+    None
+}
+
+fn run_argv(argv: &[String]) -> Result<()> {
+    let (head, tail) = argv.split_first().context("empty argv")?;
+    let status = Command::new(head)
+        .args(tail)
+        .status()
+        .with_context(|| format!("failed to spawn {head}"))?;
+    if !status.success() {
+        bail!("{} exited with {status}", argv.join(" "));
+    }
+    Ok(())
+}
+
+fn install_mpv() -> Result<()> {
+    let Some(mut argv) = detect_system_installer() else {
+        bail!(
+            "could not detect a supported system package manager (apt-get, dnf, pacman, zypper, brew) — \
+             install mpv manually and re-run"
+        );
+    };
+    argv.push("mpv".to_string());
+    eprintln!("Installing mpv via: {}", argv.join(" "));
+    run_argv(&argv)
+}
+
+fn install_yt_dlp() -> Result<()> {
+    if tool_present("pipx") {
+        let argv = vec!["pipx".to_string(), "install".to_string(), "yt-dlp".to_string()];
+        eprintln!("Installing yt-dlp via: {}", argv.join(" "));
+        return run_argv(&argv);
+    }
+    if tool_present("pip") {
+        let argv = vec!["pip".to_string(), "install".to_string(), "--user".to_string(), "yt-dlp".to_string()];
+        eprintln!("Installing yt-dlp via: {}", argv.join(" "));
+        return run_argv(&argv);
+    }
+    if tool_present("pip3") {
+        let argv = vec!["pip3".to_string(), "install".to_string(), "--user".to_string(), "yt-dlp".to_string()];
+        eprintln!("Installing yt-dlp via: {}", argv.join(" "));
+        return run_argv(&argv);
+    }
+    bail!("neither pipx, pip, nor pip3 found — install Python+pip first, or install yt-dlp manually");
+}
+
+fn run_install_deps() -> Result<()> {
+    let mut installed_any = false;
+
+    if tool_present("mpv") {
+        println!("mpv: already installed ✓");
+    } else {
+        install_mpv()?;
+        installed_any = true;
+    }
+
+    if tool_present("yt-dlp") {
+        println!("yt-dlp: already installed ✓");
+    } else {
+        install_yt_dlp()?;
+        installed_any = true;
+    }
+
+    if !installed_any {
+        println!("All dependencies already present.");
+    } else {
+        println!("Done. Re-run `rstube install-deps` to verify.");
     }
     Ok(())
 }
