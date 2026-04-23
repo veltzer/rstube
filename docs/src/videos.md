@@ -18,13 +18,15 @@ and a configured videos entry is deduped on merge — you'll only see it once.
 ## Commands
 
 ```bash
-# add
+# add (looks up title + validates the id via yt-dlp by default)
 rstube videos add <url-or-id>
+rstube videos add <url-or-id> --start 1:23    # override/set start offset
+rstube videos add <url-or-id> --no-fetch      # skip the yt-dlp lookup
 
 # remove (accepts any URL shape or the bare id)
 rstube videos remove <url-or-id>
 
-# list all
+# list all (shows cached titles if fetched)
 rstube videos list
 
 # refetch title/duration from YouTube (updates local cache)
@@ -115,14 +117,25 @@ counts as "seen" and is filtered out of `play new` / `show new`. Use
 
 ## Metadata fetching
 
-Adding a video is cheap — `videos add` only stores the id. Titles and
-durations are resolved lazily the first time rstube needs them (e.g. when
-you run `play new`, `play any`, or `show new`).
+By default `videos add` calls `yt-dlp -j --no-playlist <url>` to
+validate the id and fetch the title and duration. This takes 1–3
+seconds per add; if the id is invalid (malformed, removed, region-
+locked for your network) `videos add` aborts and nothing is written
+to config. On success the title shows up in the success line, and
+`videos list` prints it alongside the id afterwards.
 
-Lookup uses `yt-dlp -j --no-playlist <url>`, which is a full per-video
-call (1-3s each). Results are cached in `playlist_cache.json` under a
-synthetic key `rstube:video:<id>` for 24 hours, same TTL as the playlist
-cache. Force a refresh with:
+Pass `--no-fetch` to skip the lookup — useful for bulk-importing from
+a script, or for private/unlisted videos that yt-dlp can't reach
+without cookies.
+
+```bash
+rstube videos add "https://youtu.be/abc..."            # fetches + validates
+rstube videos add "https://youtu.be/abc..." --no-fetch # skips, adds unconditionally
+```
+
+Results are cached in `playlist_cache.json` under a synthetic key
+`rstube:video:<id>` for 24 hours, same TTL as the playlist cache.
+Force a refresh with:
 
 ```bash
 rstube videos fetch
@@ -155,3 +168,36 @@ is memorable enough and unambiguous.
 
 Same config file as playlists — see [Playlists](playlists.md) for the
 location rules.
+
+## Behavior summary
+
+A few things about configured videos that are worth calling out
+explicitly, because they differ from playlists:
+
+- **No names.** A configured video is identified solely by its
+  11-char YouTube id. There is no `videos show` — `videos list`
+  prints everything. `remove` and `fetch` accept any URL shape (not
+  just the bare id), which makes paste-from-browser work naturally.
+- **Duplicates are rejected.** `videos add` bails if the resolved id
+  is already in the config. Different URL shapes of the same video
+  count as the same video.
+- **Adding validates.** By default `videos add` calls yt-dlp to
+  confirm the id is real and to populate the title/duration cache.
+  Pass `--no-fetch` to skip that.
+- **`?t=N` means "seed as partial."** A URL timestamp doesn't just
+  set mpv's start flag; it also writes a position record into
+  `positions.redb`, so the video is classified as partial from the
+  moment you add it. `--start` does the same. Remove clears the
+  seeded position only if you never played past it — real watch
+  progress is preserved.
+- **Merge semantics.** Configured videos are appended after
+  playlists in the merged pool for `play new` / `play any` /
+  `show new`. A video id that appears both in a configured playlist
+  and in the videos list shows up once (first occurrence wins;
+  playlists come first).
+
+## Shell completion
+
+Bash completion for `videos remove <TAB>` and `videos fetch <TAB>`
+suggests the configured video ids (read from `config.toml` at tab
+time). See [Shell completion](completion.md) for install details.
