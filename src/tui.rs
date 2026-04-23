@@ -34,8 +34,6 @@ pub struct PickerRow {
     pub duration_secs: Option<f64>,
     /// Position in seconds if this item has watch progress, else None.
     pub position_secs: Option<f64>,
-    /// Unix timestamp of last play, if any. 0 for never.
-    pub last_played: u64,
 }
 
 enum Focus {
@@ -93,7 +91,6 @@ fn run_picker_over(
             title: e.title,
             duration_secs: e.duration_secs,
             position_secs: Some(e.position_on_exit),
-            last_played: e.ts_end,
         })
         .collect();
     let count = rows.len();
@@ -211,7 +208,6 @@ pub fn run_playlist_picker(items: Vec<PlaylistItem>) -> Result<Option<Selection>
             title: it.title,
             duration_secs: it.duration,
             position_secs: None,
-            last_played: 0,
         })
         .collect();
     run(rows, "play")
@@ -398,7 +394,6 @@ fn draw(
 }
 
 fn render_row(r: &PickerRow) -> Line<'static> {
-    let age = format_age(r.last_played);
     let dur = r.duration_secs.map(fmt_dur).unwrap_or_else(|| "--:--".into());
     let progress = match r.position_secs {
         Some(pos) => {
@@ -413,31 +408,9 @@ fn render_row(r: &PickerRow) -> Line<'static> {
     let title = r.title.clone().unwrap_or_else(|| r.url.clone());
 
     Line::from(vec![
-        Span::styled(format!("{age:>6} "), Style::default().fg(Color::DarkGray)),
         Span::styled(progress, Style::default().fg(Color::Cyan)),
         Span::raw(title),
     ])
-}
-
-fn format_age(ts: u64) -> String {
-    let now = state::now_secs();
-    if ts == 0 || ts > now {
-        return "-".into();
-    }
-    let delta = now - ts;
-    if delta < 60 {
-        format!("{delta}s")
-    } else if delta < 3600 {
-        format!("{}m", delta / 60)
-    } else if delta < 86_400 {
-        format!("{}h", delta / 3600)
-    } else if delta < 7 * 86_400 {
-        format!("{}d", delta / 86_400)
-    } else if delta < 30 * 86_400 {
-        format!("{}w", delta / (7 * 86_400))
-    } else {
-        format!("{}mo", delta / (30 * 86_400))
-    }
 }
 
 fn fmt_dur(secs: f64) -> String {
