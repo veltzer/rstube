@@ -137,13 +137,18 @@ enum PlaylistsAction {
 enum VideosAction {
     /// Add a single video. url-or-id accepts a full watch URL, a youtu.be
     /// short URL (both may include ?t=N), or a bare 11-char video id. A
-    /// non-zero offset flags the video as "partial" immediately.
+    /// non-zero offset flags the video as "partial" immediately. By default
+    /// rstube looks up the video via yt-dlp to validate it and cache its
+    /// title/duration — pass --no-fetch to skip that.
     Add {
         url_or_id: String,
         /// Start offset (seconds, "1m23s", "1:23", etc). Overrides any `t=`
         /// in the URL.
         #[arg(long)]
         start: Option<String>,
+        /// Skip the yt-dlp lookup at add time
+        #[arg(long)]
+        no_fetch: bool,
     },
     /// Remove a configured video (by url, short url, or bare 11-char id)
     Remove { url_or_id: String },
@@ -506,7 +511,7 @@ _rstube_video_ids()      { _rstube_field_in_section videos video_id; }
 
 fn run_videos(action: VideosAction) -> Result<()> {
     match action {
-        VideosAction::Add { url_or_id, start } => {
+        VideosAction::Add { url_or_id, start, no_fetch } => {
             let (video_id, url_offset) = config::parse_video_spec(&url_or_id)?;
             // Explicit --start wins over a URL's t= param.
             let offset = match start {
@@ -520,6 +525,18 @@ fn run_videos(action: VideosAction) -> Result<()> {
                      — remove it first if you want to re-add"
                 );
             }
+
+            // Fetch first so we validate the id and populate the cache
+            // before committing the config write. --no-fetch skips.
+            let fetched_title: Option<String> = if no_fetch {
+                None
+            } else {
+                ensure_tool("yt-dlp")?;
+                eprintln!("Looking up {video_id} via yt-dlp…");
+                let item = fetch_video_and_cache(&video_id)?;
+                item.title
+            };
+
             cfg.videos.push(config::ConfiguredVideo {
                 video_id: video_id.clone(),
                 start_offset_secs: offset.filter(|&n| n > 0),
@@ -541,12 +558,16 @@ fn run_videos(action: VideosAction) -> Result<()> {
                 state::upsert_position(&video_id, pos)?;
             }
 
+            let title_suffix = fetched_title
+                .as_deref()
+                .map(|t| format!(" — {t}"))
+                .unwrap_or_default();
             match offset {
                 Some(secs) if secs > 0 => {
-                    println!("added {video_id} @ {}", fmt_dur(secs as f64));
+                    println!("added {video_id} @ {}{title_suffix}", fmt_dur(secs as f64));
                     println!("(seeded as partial; shows up in `rstube play partial`)");
                 }
-                _ => println!("added {video_id}"),
+                _ => println!("added {video_id}{title_suffix}"),
             }
             println!("(stored in {})", config::config_path().display());
             Ok(())
@@ -587,7 +608,11 @@ fn run_videos(action: VideosAction) -> Result<()> {
                     .filter(|&n| n > 0)
                     .map(|n| format!(" @ {}", fmt_dur(n as f64)))
                     .unwrap_or_default();
-                println!("{:>2}. {}{offset}", i + 1, v.video_id);
+                let title = state::find_in_playlist_cache(&v.video_id)
+                    .and_then(|it| it.title)
+                    .map(|t| format!("  {t}"))
+                    .unwrap_or_default();
+                println!("{:>2}. {}{offset}{title}", i + 1, v.video_id);
             }
             Ok(())
         }

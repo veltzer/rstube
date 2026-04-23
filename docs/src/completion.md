@@ -29,9 +29,8 @@ Playlist names (configured via `playlists add`) complete in:
 - `rstube playlists remove <TAB>`
 - `rstube playlists fetch <TAB>`
 
-Video names (configured via `videos add`) complete in:
+Video ids (configured via `videos add`) complete in:
 
-- `rstube videos show <TAB>`
 - `rstube videos remove <TAB>`
 - `rstube videos fetch <TAB>`
 

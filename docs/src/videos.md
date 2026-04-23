@@ -1,7 +1,7 @@
 # Videos
 
-Alongside playlists, rstube supports adding **individual videos** under short
-names. A configured video is just a 1-item "source" that feeds into the same
+Alongside playlists, rstube supports adding **individual videos** by id.
+A configured video is just a 1-item "source" that feeds into the same
 pickers and filters as playlists.
 
 ## When to use videos vs playlists
@@ -19,20 +19,17 @@ and a configured videos entry is deduped on merge — you'll only see it once.
 
 ```bash
 # add
-rstube videos add <name> <url-or-id>
+rstube videos add <url-or-id>
 
-# remove
-rstube videos remove <name>
-
-# show id
-rstube videos show <name>
+# remove (accepts any URL shape or the bare id)
+rstube videos remove <url-or-id>
 
 # list all
 rstube videos list
 
 # refetch title/duration from YouTube (updates local cache)
-rstube videos fetch           # all configured videos
-rstube videos fetch <name>    # just one
+rstube videos fetch              # all configured videos
+rstube videos fetch <url-or-id>  # just one
 ```
 
 A "url-or-id" can be any of:
@@ -43,23 +40,24 @@ A "url-or-id" can be any of:
 - Short URL with `?t=...`: `https://youtu.be/gl2GaCDt8BE?t=178`
 - Bare 11-char id: `dQw4w9WgXcQ`
 
+All shapes normalize to the same 11-char id, which is both the config
+identity and how you refer to a configured video later.
+
 ## No duplicates
 
-rstube rejects a `videos add` if the **video id** is already configured
-under some name — even if you pass a different URL shape (short URL,
-watch URL, with or without `t=`). The 11-char id is the identity.
-Example error:
+rstube rejects a `videos add` if the **video id** is already configured,
+regardless of URL shape. Error:
 
 ```
-Error: video id dQw4w9WgXcQ already configured as "rick" —
+Error: video id dQw4w9WgXcQ already configured —
        remove it first if you want to re-add
 ```
 
-To re-add (e.g. to change the offset), remove the existing entry first:
+To re-add (e.g. to change the offset), remove first:
 
 ```bash
-rstube videos remove rick
-rstube videos add rick "https://youtu.be/dQw4w9WgXcQ?t=90"
+rstube videos remove dQw4w9WgXcQ
+rstube videos add "https://youtu.be/dQw4w9WgXcQ?t=90"
 ```
 
 ## Start offsets
@@ -75,9 +73,9 @@ Offset values accept seconds (`178`, `178s`), YouTube's compound form
 You can also set an offset explicitly:
 
 ```bash
-rstube videos add my-talk "https://youtu.be/abc..." --start 1m23s
-rstube videos add my-talk "https://youtu.be/abc..." --start 1:23
-rstube videos add my-talk "https://youtu.be/abc..." --start 83
+rstube videos add "https://youtu.be/abc..." --start 1m23s
+rstube videos add "https://youtu.be/abc..." --start 1:23
+rstube videos add "https://youtu.be/abc..." --start 83
 ```
 
 If both `--start` and a URL `t=` are present, `--start` wins.
@@ -113,7 +111,7 @@ Configured videos are appended to the merged pool after playlists:
 
 If a configured video has already been played (appears in history), it
 counts as "seen" and is filtered out of `play new` / `show new`. Use
-`play any` or the resume/partial flow to get to it again.
+`play any` or the partial/finished flow to get to it again.
 
 ## Metadata fetching
 
@@ -142,16 +140,18 @@ name = "chess"
 url = "https://www.youtube.com/playlist?list=PLABCDEF"
 
 [[videos]]
-name = "rick"
 video_id = "dQw4w9WgXcQ"
 
 # Video with a start offset — added via `videos add ... ?t=178`
 # or `--start 2:58`. Shows up as partial from 2:58.
 [[videos]]
-name = "that-talk"
 video_id = "kxopViU98Xo"
 start_offset_secs = 178
 ```
+
+Playlists still use names because YouTube playlist ids are ugly
+34-char strings; videos don't need them because the 11-char video id
+is memorable enough and unambiguous.
 
 Same config file as playlists — see [Playlists](playlists.md) for the
 location rules.

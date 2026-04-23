@@ -86,10 +86,10 @@ removed. It'll show up in `play new` again next time.
   refetches from YouTube.
 - `rstube playlists fetch` pre-warms the cache for all configured
   playlists. Nice as a cron/systemd-timer job.
-- `rstube videos add <name> <url-or-id>` bookmarks a single video so it
-  shows up in `play new`, `play any`, and `show new` alongside your
-  playlists. Passing a URL with `?t=178` (or `--start 2:58`) seeds it
-  as a partial starting at that offset. See [Videos](videos.md).
+- `rstube videos add <url-or-id>` bookmarks a single video so it shows
+  up in `play new`, `play any`, and `show new` alongside your playlists.
+  Passing a URL with `?t=178` (or `--start 2:58`) seeds it as a partial
+  starting at that offset. See [Videos](videos.md).
 - In any picker: `/` to filter, `a` to toggle audio-only playback, `d` to
   delete the current row from history, `q` to quit.
 - Pass `-v` / `--verbose` to any `play` subcommand to see mpv's terminal

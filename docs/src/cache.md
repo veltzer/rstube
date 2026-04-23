@@ -48,8 +48,8 @@ Using cached playlist for <url> (217 items, 42m old).
 rstube play new --refresh
 rstube playlists fetch          # refresh all playlists
 rstube playlists fetch chess    # refresh one playlist
-rstube videos fetch             # refresh all single videos
-rstube videos fetch rick        # refresh one video
+rstube videos fetch                    # refresh all single videos
+rstube videos fetch dQw4w9WgXcQ        # refresh one video
 ```
 
 ## Pre-warming
