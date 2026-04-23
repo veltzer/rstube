@@ -10,8 +10,7 @@ pub struct NamedPlaylist {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct NamedVideo {
-    pub name: String,
+pub struct ConfiguredVideo {
     pub video_id: String,
     /// Seconds from the start where playback should begin the first time this
     /// video is played. Auto-extracted from a `t=` query parameter in the URL
@@ -27,7 +26,7 @@ pub struct Config {
     #[serde(default)]
     pub playlists: Vec<NamedPlaylist>,
     #[serde(default)]
-    pub videos: Vec<NamedVideo>,
+    pub videos: Vec<ConfiguredVideo>,
     /// Legacy single-playlist field. Migrated into `playlists` on load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub playlist_url: Option<String>,

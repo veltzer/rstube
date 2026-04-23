@@ -135,27 +135,24 @@ enum PlaylistsAction {
 
 #[derive(Subcommand)]
 enum VideosAction {
-    /// Add a single video under a short name. url-or-id accepts a full watch
-    /// URL, a youtu.be short URL (both may include ?t=N), or a bare 11-char
-    /// video id. A non-zero offset flags the video as "partial" immediately.
+    /// Add a single video. url-or-id accepts a full watch URL, a youtu.be
+    /// short URL (both may include ?t=N), or a bare 11-char video id. A
+    /// non-zero offset flags the video as "partial" immediately.
     Add {
-        name: String,
         url_or_id: String,
         /// Start offset (seconds, "1m23s", "1:23", etc). Overrides any `t=`
         /// in the URL.
         #[arg(long)]
         start: Option<String>,
     },
-    /// Remove a configured video by name
-    Remove { name: String },
+    /// Remove a configured video (by url, short url, or bare 11-char id)
+    Remove { url_or_id: String },
     /// List configured videos in order
     List,
-    /// Print a single configured video's id (and start offset if any) by name
-    Show { name: String },
     /// Fetch title+duration from YouTube and update the local cache
     Fetch {
-        /// Video name to fetch (omit to fetch all configured videos)
-        name: Option<String>,
+        /// Video url-or-id to fetch (omit to fetch all configured videos)
+        url_or_id: Option<String>,
     },
 }
 
@@ -243,7 +240,7 @@ fn load_merged_playlists(refresh: bool) -> Result<Vec<playlist::PlaylistItem>> {
                 merged.push(item);
             }
             Err(e) => {
-                eprintln!("warning: skipping configured video \"{}\": {e}", v.name);
+                eprintln!("warning: skipping configured video {}: {e}", v.video_id);
             }
         }
     }
@@ -448,27 +445,27 @@ fn print_completions(shell: Shell) {
     }
 }
 
-/// Inject bash completion for configured playlist/video names. Names are
-/// read from the config TOML at tab time, scoped by section so
-/// `playlists show <TAB>` only suggests playlist names and `videos show <TAB>`
-/// only suggests video names.
+/// Inject bash completion for configured playlist names and video ids.
+/// Values are read from the config TOML at tab time, scoped by section so
+/// `playlists remove <TAB>` suggests only playlist names and
+/// `videos remove <TAB>` suggests only video ids.
 fn inject_bash_playlist_completions(script: &str) -> String {
     let helper = r#"
-_rstube_names_in_section() {
-    # args: $1 = section name (without brackets), e.g. "playlists" or "videos"
+_rstube_field_in_section() {
+    # args: $1 = section name (without brackets), $2 = TOML field name
     local cfg="${RSTUBE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/rstube}/config.toml"
     [[ -f "$cfg" ]] || return
-    awk -v want="[[$1]]" '
+    awk -v want="[[$1]]" -v field="$2" '
         /^\[\[/ { in_section = ($0 == want); next }
         /^\[/   { in_section = 0; next }
-        in_section && $1 == "name" {
+        in_section && $1 == field {
             match($0, /"[^"]*"/)
             if (RSTART > 0) print substr($0, RSTART+1, RLENGTH-2)
         }
     ' "$cfg"
 }
-_rstube_playlist_names() { _rstube_names_in_section playlists; }
-_rstube_video_names()    { _rstube_names_in_section videos; }
+_rstube_playlist_names() { _rstube_field_in_section playlists name; }
+_rstube_video_ids()      { _rstube_field_in_section videos video_id; }
 "#;
 
     let playlist_targets = [
@@ -477,14 +474,13 @@ _rstube_video_names()    { _rstube_names_in_section videos; }
         "rstube__subcmd__playlists__subcmd__fetch)",
     ];
     let video_targets = [
-        "rstube__subcmd__videos__subcmd__show)",
         "rstube__subcmd__videos__subcmd__remove)",
         "rstube__subcmd__videos__subcmd__fetch)",
     ];
 
     let needle = "COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )";
     let playlist_replacement = "if [[ ${cur} != -* ]] ; then\n                    COMPREPLY=( $(compgen -W \"$(_rstube_playlist_names)\" -- \"${cur}\") )\n                else\n                    COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )\n                fi";
-    let video_replacement = "if [[ ${cur} != -* ]] ; then\n                    COMPREPLY=( $(compgen -W \"$(_rstube_video_names)\" -- \"${cur}\") )\n                else\n                    COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )\n                fi";
+    let video_replacement = "if [[ ${cur} != -* ]] ; then\n                    COMPREPLY=( $(compgen -W \"$(_rstube_video_ids)\" -- \"${cur}\") )\n                else\n                    COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )\n                fi";
 
     let mut result = script.to_string();
     for (targets, replacement) in [
@@ -510,7 +506,7 @@ _rstube_video_names()    { _rstube_names_in_section videos; }
 
 fn run_videos(action: VideosAction) -> Result<()> {
     match action {
-        VideosAction::Add { name, url_or_id, start } => {
+        VideosAction::Add { url_or_id, start } => {
             let (video_id, url_offset) = config::parse_video_spec(&url_or_id)?;
             // Explicit --start wins over a URL's t= param.
             let offset = match start {
@@ -518,18 +514,13 @@ fn run_videos(action: VideosAction) -> Result<()> {
                 None => url_offset,
             };
             let mut cfg = config::load();
-            if cfg.videos.iter().any(|v| v.name == name) {
-                bail!("video named \"{name}\" already exists");
-            }
-            if let Some(existing) = cfg.videos.iter().find(|v| v.video_id == video_id) {
+            if cfg.videos.iter().any(|v| v.video_id == video_id) {
                 bail!(
-                    "video id {video_id} already configured as \"{}\" \
-                     — remove it first if you want to re-add",
-                    existing.name
+                    "video id {video_id} already configured \
+                     — remove it first if you want to re-add"
                 );
             }
-            cfg.videos.push(config::NamedVideo {
-                name: name.clone(),
+            cfg.videos.push(config::ConfiguredVideo {
                 video_id: video_id.clone(),
                 start_offset_secs: offset.filter(|&n| n > 0),
             });
@@ -552,18 +543,19 @@ fn run_videos(action: VideosAction) -> Result<()> {
 
             match offset {
                 Some(secs) if secs > 0 => {
-                    println!("added \"{name}\" → {video_id} @ {}", fmt_dur(secs as f64));
-                    println!("(seeded as partial; show up in `rstube play partial`)");
+                    println!("added {video_id} @ {}", fmt_dur(secs as f64));
+                    println!("(seeded as partial; shows up in `rstube play partial`)");
                 }
-                _ => println!("added \"{name}\" → {video_id}"),
+                _ => println!("added {video_id}"),
             }
             println!("(stored in {})", config::config_path().display());
             Ok(())
         }
-        VideosAction::Remove { name } => {
+        VideosAction::Remove { url_or_id } => {
+            let (video_id, _) = config::parse_video_spec(&url_or_id)?;
             let mut cfg = config::load();
-            let Some(idx) = cfg.videos.iter().position(|v| v.name == name) else {
-                bail!("no video named \"{name}\"");
+            let Some(idx) = cfg.videos.iter().position(|v| v.video_id == video_id) else {
+                bail!("no configured video with id {video_id}");
             };
             let removed = cfg.videos.remove(idx);
             config::save(&cfg)?;
@@ -580,7 +572,7 @@ fn run_videos(action: VideosAction) -> Result<()> {
                     eprintln!("warning: failed to clear seeded position: {e}");
                 }
             }
-            println!("removed \"{name}\"");
+            println!("removed {video_id}");
             Ok(())
         }
         VideosAction::List => {
@@ -595,30 +587,20 @@ fn run_videos(action: VideosAction) -> Result<()> {
                     .filter(|&n| n > 0)
                     .map(|n| format!(" @ {}", fmt_dur(n as f64)))
                     .unwrap_or_default();
-                println!("{:>2}. {}  {}{offset}", i + 1, v.name, v.video_id);
+                println!("{:>2}. {}{offset}", i + 1, v.video_id);
             }
             Ok(())
         }
-        VideosAction::Show { name } => {
-            let cfg = config::load();
-            let Some(v) = cfg.videos.iter().find(|v| v.name == name) else {
-                bail!("no video named \"{name}\"");
-            };
-            match v.start_offset_secs.filter(|&n| n > 0) {
-                Some(n) => println!("{} @ {}", v.video_id, fmt_dur(n as f64)),
-                None => println!("{}", v.video_id),
-            }
-            Ok(())
-        }
-        VideosAction::Fetch { name } => {
+        VideosAction::Fetch { url_or_id } => {
             let cfg = config::load();
             if cfg.videos.is_empty() {
-                bail!("no videos configured — add one with `rstube videos add <name> <url-or-id>`");
+                bail!("no videos configured — add one with `rstube videos add <url-or-id>`");
             }
-            let targets: Vec<&config::NamedVideo> = match name {
-                Some(n) => {
-                    let Some(v) = cfg.videos.iter().find(|v| v.name == n) else {
-                        bail!("no video named \"{n}\"");
+            let targets: Vec<&config::ConfiguredVideo> = match url_or_id {
+                Some(s) => {
+                    let (video_id, _) = config::parse_video_spec(&s)?;
+                    let Some(v) = cfg.videos.iter().find(|v| v.video_id == video_id) else {
+                        bail!("no configured video with id {video_id}");
                     };
                     vec![v]
                 }
@@ -629,7 +611,7 @@ fn run_videos(action: VideosAction) -> Result<()> {
                 let item = fetch_video_and_cache(&v.video_id)?;
                 let dur = item.duration.map(fmt_dur).unwrap_or_else(|| "--:--".into());
                 let title = item.title.as_deref().unwrap_or(&v.video_id);
-                println!("{}: [{dur}] {title}", v.name);
+                println!("{}: [{dur}] {title}", v.video_id);
             }
             Ok(())
         }
