@@ -21,7 +21,7 @@ fn history_subcommand_reads_state_dir() {
     let state_dir = dir.path().join("state");
 
     // No history yet — should succeed and mention the path.
-    let out = run(dir.path(), &state_dir, &["history"]);
+    let out = run(dir.path(), &state_dir, &["history", "show"]);
     assert!(out.status.success(), "history failed: {:?}", out);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("no history yet"), "expected empty-history message, got:\n{stdout}");
@@ -41,7 +41,7 @@ fn history_subcommand_reads_state_dir() {
     .to_string();
     std::fs::write(state_dir.join("history.jsonl"), format!("{line}\n")).unwrap();
 
-    let out = run(dir.path(), &state_dir, &["history"]);
+    let out = run(dir.path(), &state_dir, &["history", "show"]);
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("Never Gonna Give You Up"), "missing title:\n{stdout}");
