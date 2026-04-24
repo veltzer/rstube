@@ -107,17 +107,33 @@ enum HistoryAction {
 enum ShowAction {
     /// List videos watched to (near) the end
     Finished {
-        /// Include timing/percentage (default: just id and title)
+        /// Include video id, timing/percentage, and finish date
         #[arg(short, long)]
+        verbose: bool,
+        /// Deprecated alias for --verbose
+        #[arg(short, long, hide = true)]
         details: bool,
+        /// Emit a JSON array of HistoryEntry objects
+        #[arg(long)]
+        json: bool,
     },
     /// List videos partially watched — same set `play partial` offers
-    Partial,
+    Partial {
+        /// Include the last-seen date alongside timing
+        #[arg(short, long)]
+        verbose: bool,
+        /// Emit a JSON array of HistoryEntry objects
+        #[arg(long)]
+        json: bool,
+    },
     /// List videos in configured playlists you haven't started yet
     New {
         /// Bypass the playlist cache and refetch from YouTube
         #[arg(long)]
         refresh: bool,
+        /// Emit a JSON array of playlist-item objects
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -701,15 +717,20 @@ fn load_configured_video(video_id: &str, refresh: bool) -> Result<playlist::Play
 
 fn run_show(action: ShowAction) -> Result<()> {
     match action {
-        ShowAction::Finished { details } => {
+        ShowAction::Finished { verbose, details, json } => {
             let entries = tui::finished_candidates();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&entries)?);
+                return Ok(());
+            }
             if entries.is_empty() {
                 println!("(no finished videos)");
                 return Ok(());
             }
+            let verbose = verbose || details;
             for e in &entries {
-                if details {
-                    print_history_row(e);
+                if verbose {
+                    print_history_row_with_date(e);
                 } else {
                     let title = e.title.as_deref().unwrap_or(&e.url);
                     println!("{title}");
@@ -717,22 +738,34 @@ fn run_show(action: ShowAction) -> Result<()> {
             }
             Ok(())
         }
-        ShowAction::Partial => {
+        ShowAction::Partial { verbose, json } => {
             let entries = tui::partial_candidates();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&entries)?);
+                return Ok(());
+            }
             if entries.is_empty() {
                 println!("(no partial videos)");
                 return Ok(());
             }
             for e in &entries {
-                print_history_row(e);
+                if verbose {
+                    print_history_row_with_date(e);
+                } else {
+                    print_history_row(e);
+                }
             }
             Ok(())
         }
-        ShowAction::New { refresh } => {
+        ShowAction::New { refresh, json } => {
             let merged = load_merged_playlists(refresh)?;
             let seen = state::played_video_ids();
             let unseen: Vec<playlist::PlaylistItem> =
                 merged.into_iter().filter(|it| !seen.contains(&it.id)).collect();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&unseen)?);
+                return Ok(());
+            }
             if unseen.is_empty() {
                 println!("(no new videos — every item in your playlists is in history)");
                 return Ok(());
@@ -745,6 +778,19 @@ fn run_show(action: ShowAction) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn print_history_row_with_date(entry: &state::HistoryEntry) {
+    let title = entry.title.as_deref().unwrap_or(&entry.url);
+    let pos = fmt_dur(entry.position_on_exit);
+    let dur = entry.duration_secs.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+    let pct = entry
+        .duration_secs
+        .filter(|d| *d > 0.0)
+        .map(|d| format!(" ({:.0}%)", 100.0 * entry.position_on_exit / d))
+        .unwrap_or_default();
+    let ts = if entry.ts_end > 0 { entry.ts_end } else { entry.ts_start };
+    println!("{}  [{pos}/{dur}{pct}] {} {title}", fmt_ts(ts), entry.video_id);
 }
 
 fn print_history_row(entry: &state::HistoryEntry) {
