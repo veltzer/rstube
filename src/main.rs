@@ -5,6 +5,7 @@ mod state;
 mod tui;
 
 use anyhow::{Context, Result, bail};
+use chrono::TimeZone;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 use std::process::{Command, Stdio};
@@ -96,6 +97,9 @@ enum HistoryAction {
         /// Max entries to show (most recent first)
         #[arg(short = 'n', long, default_value_t = 20)]
         limit: usize,
+        /// Include session start/end timestamps
+        #[arg(short, long)]
+        verbose: bool,
     },
 }
 
@@ -193,7 +197,7 @@ fn main() -> Result<()> {
 
 fn run_history(action: HistoryAction) -> Result<()> {
     match action {
-        HistoryAction::Show { limit } => show_history(limit),
+        HistoryAction::Show { limit, verbose } => show_history(limit, verbose),
     }
 }
 
@@ -755,7 +759,7 @@ fn print_history_row(entry: &state::HistoryEntry) {
     println!("[{pos}/{dur}{pct}] {} {title}", entry.video_id);
 }
 
-fn show_history(limit: usize) -> Result<()> {
+fn show_history(limit: usize, verbose: bool) -> Result<()> {
     let path = state::history_path();
     if !path.exists() {
         println!("(no history yet — path: {})", path.display());
@@ -786,7 +790,13 @@ fn show_history(limit: usize) -> Result<()> {
             .map(|d| format!(" ({:.0}%)", 100.0 * effective_pos / d))
             .unwrap_or_default();
         let marker = if unfinished { " [unclean exit]" } else { "" };
-        println!("[{pos}/{dur}{pct}] {} {title}{marker}", entry.video_id);
+        let date_prefix = if verbose {
+            let end = if entry.ts_end == 0 { "........".into() } else { fmt_ts(entry.ts_end) };
+            format!("{} → {}  ", fmt_ts(entry.ts_start), end)
+        } else {
+            String::new()
+        };
+        println!("{date_prefix}[{pos}/{dur}{pct}] {} {title}{marker}", entry.video_id);
     }
     Ok(())
 }
@@ -908,6 +918,14 @@ fn run_install_deps() -> Result<()> {
         println!("Done. Re-run `rstube install-deps` to verify.");
     }
     Ok(())
+}
+
+fn fmt_ts(ts: u64) -> String {
+    chrono::Local
+        .timestamp_opt(ts as i64, 0)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| "????-??-?? ??:??:??".into())
 }
 
 fn fmt_dur(secs: f64) -> String {
