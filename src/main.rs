@@ -20,11 +20,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Show recent playback history
+    /// Inspect playback history
     History {
-        /// Max entries to show (most recent first)
-        #[arg(short = 'n', long, default_value_t = 20)]
-        limit: usize,
+        #[command(subcommand)]
+        action: HistoryAction,
     },
     /// Play videos: resume a partial, pick a new one, or browse anything
     Play {
@@ -87,6 +86,16 @@ enum PlayAction {
         /// Show mpv's terminal status line and verbose log output
         #[arg(short, long)]
         verbose: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum HistoryAction {
+    /// Show recent playback history
+    Show {
+        /// Max entries to show (most recent first)
+        #[arg(short = 'n', long, default_value_t = 20)]
+        limit: usize,
     },
 }
 
@@ -168,7 +177,7 @@ fn main() -> Result<()> {
             print_version();
             Ok(())
         }
-        Commands::History { limit } => show_history(limit),
+        Commands::History { action } => run_history(action),
         Commands::Play { action } => run_play(action),
         Commands::Show { action } => run_show(action),
         Commands::Forget { action } => run_forget(action),
@@ -179,6 +188,12 @@ fn main() -> Result<()> {
             Ok(())
         }
         Commands::InstallDeps => run_install_deps(),
+    }
+}
+
+fn run_history(action: HistoryAction) -> Result<()> {
+    match action {
+        HistoryAction::Show { limit } => show_history(limit),
     }
 }
 

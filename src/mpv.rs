@@ -58,7 +58,7 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
     // Phase 1: write an open-session history line immediately. `ts_end = 0`
     // marks it as not-yet-finished. If rstube dies without reaching the
     // phase-2 write below (power loss, SIGKILL), this row still survives —
-    // the session will show up in `rstube history` and count as "seen" in
+    // the session will show up in `rstube history show` and count as "seen" in
     // `play new` filtering.
     let _ = state::append_history(&HistoryEntry {
         ts_start,

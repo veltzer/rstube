@@ -29,7 +29,7 @@ the finished bucket and into partial.
 
 ## Commands that interact with history
 
-- `rstube history [-n N]` — print the last N entries. Unclean-exit
+- `rstube history show [-n N]` — print the last N entries. Unclean-exit
   sessions appear with a `[unclean exit]` marker.
 - `rstube play partial` — pick an in-progress video to resume.
 - `rstube show partial` / `show finished` — print text-only lists of
@@ -63,7 +63,7 @@ Any *previous* saved position for that video is left untouched — you'd
 resume from there, not from zero.
 
 Unclean-exit sessions (mpv killed by crash or power loss) **do** appear
-in `rstube history` — flagged with a `[unclean exit]` marker. See
+in `rstube history show` — flagged with a `[unclean exit]` marker. See
 "Two-phase history writes" below for how.
 
 ## How the tracker stays in sync with mpv
@@ -156,7 +156,7 @@ tracker snapshot.
 Phase-2 always replaces phase-1 for a clean session; phase-1-only
 sessions (rstube/mpv died before reaching phase-2) survive as-is.
 
-**User-visible effect.** `rstube history` shows unclean-exit sessions
+**User-visible effect.** `rstube history show` shows unclean-exit sessions
 with a `[unclean exit]` suffix, and pulls the last-known position from
 `positions.redb` so you can still see roughly where you were.
 
@@ -192,7 +192,7 @@ For rstube specifically:
 - We already tolerate ~30 seconds of position loss from the tracker's
   30s poll interval.
 - A lost phase-1 line for a session whose `positions.redb` entry did
-  flush means the session is missing from `rstube history` — but `play
+  flush means the session is missing from `rstube history show` — but `play
   resume` still works, because resume reads from `positions.redb`.
 - `fsync` serializes IO, costing 5–50ms per write on a spinning disk;
   cheap on SSD but not free.
