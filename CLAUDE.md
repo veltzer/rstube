@@ -8,7 +8,6 @@ Terminal app for playing YouTube videos through `mpv` with resume-position track
 
 ## Commands
 
-- Toolchain is pinned to Rust 1.95 via `rust-toolchain.toml`.
 - Build/test/lint: standard `cargo build`, `cargo test`, `cargo clippy`, `cargo fmt`.
 - **CI runs no tests or lints** (workflows only build releases on tags and deploy docs). Run `cargo test` and `cargo clippy` locally before committing — there is no safety net.
 - Docs are mdBook: `mdbook build docs` (deployed to GitHub Pages on push to main). `docs/book/` is gitignored build output.

@@ -623,10 +623,9 @@ fn run_videos(action: VideosAction) -> Result<()> {
             if let Some(seeded) = removed.start_offset_secs.filter(|&n| n > 0)
                 && let Some(pos) = state::get_position(&removed.video_id)
                 && (pos.position_secs - seeded as f64).abs() < 0.5
+                && let Err(e) = state::delete_position(&removed.video_id)
             {
-                if let Err(e) = state::delete_position(&removed.video_id) {
-                    eprintln!("warning: failed to clear seeded position: {e}");
-                }
+                eprintln!("warning: failed to clear seeded position: {e}");
             }
             println!("removed {video_id}");
             Ok(())
@@ -701,14 +700,12 @@ fn fetch_video_and_cache(video_id: &str) -> Result<playlist::PlaylistItem> {
 /// playlists; `refresh=true` bypasses.
 fn load_configured_video(video_id: &str, refresh: bool) -> Result<playlist::PlaylistItem> {
     let key = video_cache_key(video_id);
-    if !refresh {
-        if let Some(entry) = state::load_playlist_cache(&key) {
-            if state::now_secs().saturating_sub(entry.fetched_at) < PLAYLIST_CACHE_TTL_SECS {
-                if let Some(item) = entry.items.into_iter().next() {
-                    return Ok(item);
-                }
-            }
-        }
+    if !refresh
+        && let Some(entry) = state::load_playlist_cache(&key)
+        && state::now_secs().saturating_sub(entry.fetched_at) < PLAYLIST_CACHE_TTL_SECS
+        && let Some(item) = entry.items.into_iter().next()
+    {
+        return Ok(item);
     }
     ensure_tool("yt-dlp")?;
     eprintln!("Fetching video metadata for {video_id}…");

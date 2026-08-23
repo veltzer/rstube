@@ -11,3 +11,4 @@
 - [Shell completion](completion.md)
 - [mpv configuration](mpv-config.md)
 - [File layout and environment](files.md)
+- [Release Info](release-info.md)

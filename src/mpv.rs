@@ -11,6 +11,10 @@ use std::time::{Duration, Instant};
 
 use crate::state::{self, HistoryEntry, Position};
 
+/// Last playback state observed from mpv, shared between the tracker thread
+/// and `play`: `Some((position_secs, duration_secs))` once known.
+type SharedLastPos = Arc<Mutex<Option<(f64, Option<f64>)>>>;
+
 const POLL_INTERVAL_SECS: u64 = 30;
 const MIN_RESUME_SECS: f64 = 10.0;
 const RESUME_TAIL_MARGIN_SECS: f64 = 10.0;
@@ -72,7 +76,7 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
     });
 
     let stop = Arc::new(AtomicBool::new(false));
-    let last_pos: Arc<Mutex<Option<(f64, Option<f64>)>>> = Arc::new(Mutex::new(None));
+    let last_pos: SharedLastPos = Arc::new(Mutex::new(None));
 
     let tracker = spawn_tracker(
         sock_path.clone(),
@@ -86,7 +90,7 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
     let _ = tracker.join();
     let _ = std::fs::remove_file(&sock_path);
 
-    let (final_pos, final_dur) = last_pos.lock().unwrap().clone().unwrap_or((0.0, req.duration_secs));
+    let (final_pos, final_dur) = (*last_pos.lock().unwrap()).unwrap_or((0.0, req.duration_secs));
     let duration_for_record = final_dur.or(req.duration_secs);
 
     if final_pos > 0.0 {
@@ -137,7 +141,7 @@ fn spawn_tracker(
     sock_path: PathBuf,
     key: String,
     stop: Arc<AtomicBool>,
-    last_pos: Arc<Mutex<Option<(f64, Option<f64>)>>>,
+    last_pos: SharedLastPos,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let stream = match wait_for_socket(&sock_path, &stop, Duration::from_secs(10)) {
@@ -210,7 +214,7 @@ fn spawn_tracker(
                 }
                 thread::sleep(Duration::from_millis(200));
 
-                let snapshot = latest.lock().unwrap().clone();
+                let snapshot = *latest.lock().unwrap();
                 if let (Some(pos), dur) = snapshot {
                     *last_pos.lock().unwrap() = Some((pos, dur));
                     let fingerprint = (pos.to_bits(), dur.map(f64::to_bits));

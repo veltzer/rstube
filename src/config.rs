@@ -168,12 +168,12 @@ pub fn parse_time_spec(s: &str) -> Result<u64> {
     }
 
     // Plain seconds: "178" or "178s".
-    if let Some(stripped) = s.strip_suffix('s') {
-        if stripped.chars().all(|c| c.is_ascii_digit()) {
-            return stripped
-                .parse()
-                .with_context(|| format!("invalid numeric time spec: {s:?}"));
-        }
+    if let Some(stripped) = s.strip_suffix('s')
+        && stripped.chars().all(|c| c.is_ascii_digit())
+    {
+        return stripped
+            .parse()
+            .with_context(|| format!("invalid numeric time spec: {s:?}"));
     }
     if s.chars().all(|c| c.is_ascii_digit()) {
         return s

@@ -180,7 +180,7 @@ fn latest_session_per_video() -> Vec<HistoryEntry> {
         }
     }
     let mut out: Vec<HistoryEntry> = by_id.into_values().collect();
-    out.sort_by(|a, b| b.ts_end.cmp(&a.ts_end));
+    out.sort_by_key(|e| std::cmp::Reverse(e.ts_end));
     out
 }
 
