@@ -52,12 +52,17 @@ pub fn config_path() -> PathBuf {
 
 pub fn load() -> Config {
     let path = config_path();
-    let Ok(bytes) = fs::read_to_string(&path) else { return Config::default(); };
+    let Ok(bytes) = fs::read_to_string(&path) else {
+        return Config::default();
+    };
     let mut cfg: Config = toml::from_str(&bytes).unwrap_or_default();
     if let Some(legacy) = cfg.playlist_url.take()
         && cfg.playlists.is_empty()
     {
-        cfg.playlists.push(NamedPlaylist { name: "default".into(), url: legacy });
+        cfg.playlists.push(NamedPlaylist {
+            name: "default".into(),
+            url: legacy,
+        });
     }
     cfg
 }
@@ -71,8 +76,7 @@ pub fn save(cfg: &Config) -> Result<()> {
     let serialized = toml::to_string_pretty(cfg)?;
     fs::write(&tmp, serialized.as_bytes())
         .with_context(|| format!("failed to write {}", tmp.display()))?;
-    fs::rename(&tmp, &path)
-        .with_context(|| format!("failed to rename into {}", path.display()))?;
+    fs::rename(&tmp, &path).with_context(|| format!("failed to rename into {}", path.display()))?;
     Ok(())
 }
 
@@ -92,7 +96,11 @@ pub fn parse_video_spec(input: &str) -> Result<(String, Option<u64>)> {
 
     let (id_candidate, query): (String, Option<&str>) =
         if let Some(after_v) = s.split_once("v=").map(|(_, r)| r) {
-            let id = after_v.split(&['&', '#'][..]).next().unwrap_or("").to_owned();
+            let id = after_v
+                .split(&['&', '#'][..])
+                .next()
+                .unwrap_or("")
+                .to_owned();
             // The whole URL after `?` may contain the t= param, not just after v=.
             let query = s.split_once('?').map(|(_, q)| q);
             (id, query)
@@ -114,7 +122,9 @@ pub fn parse_video_spec(input: &str) -> Result<(String, Option<u64>)> {
         };
 
     if id_candidate.len() != 11
-        || !id_candidate.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        || !id_candidate
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
         bail!(
             "not a valid YouTube video id: {id_candidate:?} \
@@ -203,7 +213,9 @@ pub fn parse_time_spec(s: &str) -> Result<u64> {
                 if seen_m || seen_s || num.is_empty() {
                     bail!("invalid compound time spec: {s:?}");
                 }
-                let n: u64 = num.parse().with_context(|| format!("bad minute in {s:?}"))?;
+                let n: u64 = num
+                    .parse()
+                    .with_context(|| format!("bad minute in {s:?}"))?;
                 total += n * 60;
                 num.clear();
                 seen_m = true;
@@ -212,7 +224,9 @@ pub fn parse_time_spec(s: &str) -> Result<u64> {
                 if seen_s || num.is_empty() {
                     bail!("invalid compound time spec: {s:?}");
                 }
-                let n: u64 = num.parse().with_context(|| format!("bad second in {s:?}"))?;
+                let n: u64 = num
+                    .parse()
+                    .with_context(|| format!("bad second in {s:?}"))?;
                 total += n;
                 num.clear();
                 seen_s = true;
@@ -226,7 +240,9 @@ pub fn parse_time_spec(s: &str) -> Result<u64> {
         if seen_s {
             bail!("trailing digits after s suffix: {s:?}");
         }
-        let n: u64 = num.parse().with_context(|| format!("bad trailing seconds in {s:?}"))?;
+        let n: u64 = num
+            .parse()
+            .with_context(|| format!("bad trailing seconds in {s:?}"))?;
         total += n;
     }
     Ok(total)

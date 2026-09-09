@@ -73,8 +73,7 @@ use redb::ReadableTable;
 // (strings); values are JSON-serialized `Position` records (bytes). Using
 // JSON as the value encoding keeps the file trivially inspectable with
 // `redb dump` and lets us add Position fields without a schema migration.
-const POSITIONS_TABLE: redb::TableDefinition<&str, &[u8]> =
-    redb::TableDefinition::new("positions");
+const POSITIONS_TABLE: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("positions");
 
 fn open_positions_db() -> Result<redb::Database> {
     ensure_state_dir()?;
@@ -84,12 +83,20 @@ fn open_positions_db() -> Result<redb::Database> {
 }
 
 pub fn load_positions() -> HashMap<String, Position> {
-    let Ok(db) = open_positions_db() else { return HashMap::new(); };
-    let Ok(txn) = db.begin_read() else { return HashMap::new(); };
+    let Ok(db) = open_positions_db() else {
+        return HashMap::new();
+    };
+    let Ok(txn) = db.begin_read() else {
+        return HashMap::new();
+    };
     // Missing table on a fresh db is not an error — just no entries yet.
-    let Ok(table) = txn.open_table(POSITIONS_TABLE) else { return HashMap::new(); };
+    let Ok(table) = txn.open_table(POSITIONS_TABLE) else {
+        return HashMap::new();
+    };
     let mut out = HashMap::new();
-    let Ok(iter) = table.iter() else { return out; };
+    let Ok(iter) = table.iter() else {
+        return out;
+    };
     for row in iter.flatten() {
         let (k, v) = row;
         if let Ok(pos) = serde_json::from_slice::<Position>(v.value()) {
@@ -103,7 +110,9 @@ pub fn upsert_position(video_id: &str, pos: Position) -> Result<()> {
     let db = open_positions_db()?;
     let txn = db.begin_write().context("begin_write positions")?;
     {
-        let mut table = txn.open_table(POSITIONS_TABLE).context("open positions table")?;
+        let mut table = txn
+            .open_table(POSITIONS_TABLE)
+            .context("open positions table")?;
         let bytes = serde_json::to_vec(&pos)?;
         table
             .insert(video_id, bytes.as_slice())
@@ -125,7 +134,9 @@ pub fn delete_position(video_id: &str) -> Result<()> {
     let db = open_positions_db()?;
     let txn = db.begin_write().context("begin_write positions")?;
     {
-        let mut table = txn.open_table(POSITIONS_TABLE).context("open positions table")?;
+        let mut table = txn
+            .open_table(POSITIONS_TABLE)
+            .context("open positions table")?;
         table.remove(video_id).context("remove position")?;
     }
     txn.commit().context("commit positions")?;
@@ -150,7 +161,9 @@ pub fn append_history(entry: &HistoryEntry) -> Result<()> {
 /// touch parseable JSON that matches the target id).
 pub fn forget_history(video_id: &str) -> Result<usize> {
     let path = history_path();
-    let Ok(contents) = fs::read_to_string(&path) else { return Ok(0); };
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return Ok(0);
+    };
     let mut kept: Vec<&str> = Vec::new();
     let mut removed = 0usize;
     for line in contents.lines() {
@@ -171,11 +184,14 @@ pub fn forget_history(video_id: &str) -> Result<usize> {
     ensure_state_dir()?;
     let tmp = path.with_extension("jsonl.tmp");
     let body = kept.join("\n");
-    let payload = if body.is_empty() { String::new() } else { format!("{body}\n") };
+    let payload = if body.is_empty() {
+        String::new()
+    } else {
+        format!("{body}\n")
+    };
     fs::write(&tmp, payload.as_bytes())
         .with_context(|| format!("failed to write {}", tmp.display()))?;
-    fs::rename(&tmp, &path)
-        .with_context(|| format!("failed to rename into {}", path.display()))?;
+    fs::rename(&tmp, &path).with_context(|| format!("failed to rename into {}", path.display()))?;
     Ok(removed)
 }
 
@@ -215,7 +231,9 @@ pub fn played_video_ids() -> std::collections::HashSet<String> {
     if let Ok(contents) = fs::read_to_string(&path) {
         for line in contents.lines() {
             let line = line.trim();
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             if let Ok(entry) = serde_json::from_str::<HistoryEntry>(line) {
                 ids.insert(entry.video_id);
             }
@@ -242,9 +260,13 @@ pub struct PlaylistCacheEntry {
 fn load_playlist_cache_file() -> PlaylistCacheFile {
     let path = playlist_cache_path();
     let Ok(bytes) = fs::read(&path) else {
-        return PlaylistCacheFile { entries: HashMap::new() };
+        return PlaylistCacheFile {
+            entries: HashMap::new(),
+        };
     };
-    serde_json::from_slice(&bytes).unwrap_or(PlaylistCacheFile { entries: HashMap::new() })
+    serde_json::from_slice(&bytes).unwrap_or(PlaylistCacheFile {
+        entries: HashMap::new(),
+    })
 }
 
 pub fn load_playlist_cache(url: &str) -> Option<PlaylistCacheEntry> {
@@ -278,10 +300,8 @@ pub fn save_playlist_cache(url: &str, items: &[PlaylistItem]) -> Result<()> {
     let path = playlist_cache_path();
     let tmp = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec_pretty(&cache)?;
-    fs::write(&tmp, &bytes)
-        .with_context(|| format!("failed to write {}", tmp.display()))?;
-    fs::rename(&tmp, &path)
-        .with_context(|| format!("failed to rename into {}", path.display()))?;
+    fs::write(&tmp, &bytes).with_context(|| format!("failed to write {}", tmp.display()))?;
+    fs::rename(&tmp, &path).with_context(|| format!("failed to rename into {}", path.display()))?;
     Ok(())
 }
 
@@ -312,15 +332,18 @@ pub fn load_history_sessions() -> Vec<HistoryEntry> {
 /// Load all history records in file order. Silently skips malformed lines.
 pub fn load_all_history() -> Vec<HistoryEntry> {
     let path = history_path();
-    let Ok(contents) = fs::read_to_string(&path) else { return Vec::new(); };
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     for line in contents.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         if let Ok(entry) = serde_json::from_str::<HistoryEntry>(line) {
             out.push(entry);
         }
     }
     out
 }
-

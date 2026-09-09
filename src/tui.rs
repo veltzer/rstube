@@ -79,10 +79,7 @@ pub fn run_finished_picker() -> Result<(usize, Option<Selection>)> {
     run_picker_over(finished_candidates(), "finished")
 }
 
-fn run_picker_over(
-    entries: Vec<HistoryEntry>,
-    label: &str,
-) -> Result<(usize, Option<Selection>)> {
+fn run_picker_over(entries: Vec<HistoryEntry>, label: &str) -> Result<(usize, Option<Selection>)> {
     let rows: Vec<PickerRow> = entries
         .into_iter()
         .map(|e| PickerRow {
@@ -187,14 +184,20 @@ fn latest_session_per_video() -> Vec<HistoryEntry> {
 /// Videos whose most recent session is classified as "partial" — not yet
 /// watched past the tail margin. Sorted newest-first.
 pub fn partial_candidates() -> Vec<HistoryEntry> {
-    latest_session_per_video().into_iter().filter(is_partial).collect()
+    latest_session_per_video()
+        .into_iter()
+        .filter(is_partial)
+        .collect()
 }
 
 /// Videos whose most recent session is classified as "finished" — watched
 /// through to within `PARTIAL_TAIL_MARGIN_SECS` of the end. Sorted
 /// newest-first.
 pub fn finished_candidates() -> Vec<HistoryEntry> {
-    latest_session_per_video().into_iter().filter(is_finished).collect()
+    latest_session_per_video()
+        .into_iter()
+        .filter(is_finished)
+        .collect()
 }
 
 /// Picker over playlist items. Caller decides what to include (e.g. unseen-only
@@ -260,12 +263,24 @@ fn main_loop(
             list_state.select(Some(0));
         }
 
-        terminal.draw(|f| draw(f, &filtered, &mut list_state, &filter, &focus, audio_only, label))?;
+        terminal.draw(|f| {
+            draw(
+                f,
+                &filtered,
+                &mut list_state,
+                &filter,
+                &focus,
+                audio_only,
+                label,
+            )
+        })?;
 
         if !event::poll(Duration::from_millis(200))? {
             continue;
         }
-        let Event::Key(key) = event::read()? else { continue };
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
         if key.kind != KeyEventKind::Press {
             continue;
         }
@@ -277,7 +292,9 @@ fn main_loop(
         match focus {
             Focus::Filter => match key.code {
                 KeyCode::Esc | KeyCode::Enter => focus = Focus::List,
-                KeyCode::Backspace => { filter.pop(); }
+                KeyCode::Backspace => {
+                    filter.pop();
+                }
                 KeyCode::Char(c) => filter.push(c),
                 _ => {}
             },
@@ -290,10 +307,14 @@ fn main_loop(
                 KeyCode::PageDown => move_selection(&mut list_state, &filtered, 10),
                 KeyCode::PageUp => move_selection(&mut list_state, &filtered, -10),
                 KeyCode::Home => {
-                    if !filtered.is_empty() { list_state.select(Some(0)); }
+                    if !filtered.is_empty() {
+                        list_state.select(Some(0));
+                    }
                 }
                 KeyCode::End => {
-                    if !filtered.is_empty() { list_state.select(Some(filtered.len() - 1)); }
+                    if !filtered.is_empty() {
+                        list_state.select(Some(filtered.len() - 1));
+                    }
                 }
                 KeyCode::Char('d') => {
                     if let Some(idx) = list_state.selected()
@@ -338,8 +359,7 @@ fn filter_rows<'a>(rows: &'a [PickerRow], filter: &str) -> Vec<&'a PickerRow> {
         return rows.iter().collect();
     }
     let needle = filter.to_lowercase();
-    rows
-        .iter()
+    rows.iter()
         .filter(|r| {
             let hay = r.title.as_deref().unwrap_or(&r.url).to_lowercase();
             hay.contains(&needle)
@@ -394,10 +414,14 @@ fn draw(
 }
 
 fn render_row(r: &PickerRow) -> Line<'static> {
-    let dur = r.duration_secs.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+    let dur = r
+        .duration_secs
+        .map(fmt_dur)
+        .unwrap_or_else(|| "--:--".into());
     let progress = match r.position_secs {
         Some(pos) => {
-            let pct = r.duration_secs
+            let pct = r
+                .duration_secs
                 .filter(|d| *d > 0.0)
                 .map(|d| format!(" {:>3.0}%", 100.0 * pos / d))
                 .unwrap_or_default();

@@ -294,7 +294,11 @@ fn run_play_any(refresh: bool, verbose: bool) -> Result<()> {
     let merged = load_merged_playlists(refresh)?;
     let cfg = config::load();
 
-    eprintln!("{} total videos across {} playlists.", merged.len(), cfg.playlists.len());
+    eprintln!(
+        "{} total videos across {} playlists.",
+        merged.len(),
+        cfg.playlists.len()
+    );
 
     let Some(sel) = tui::run_playlist_picker(merged)? else {
         return Ok(());
@@ -339,7 +343,9 @@ fn load_playlist_items(url: &str, refresh: bool) -> Result<Vec<playlist::Playlis
         return fetch_and_cache(url);
     }
     match state::load_playlist_cache(url) {
-        Some(entry) if state::now_secs().saturating_sub(entry.fetched_at) < PLAYLIST_CACHE_TTL_SECS => {
+        Some(entry)
+            if state::now_secs().saturating_sub(entry.fetched_at) < PLAYLIST_CACHE_TTL_SECS =>
+        {
             let age_mins = state::now_secs().saturating_sub(entry.fetched_at) / 60;
             eprintln!(
                 "Using cached playlist for {url} ({} items, {}m old).",
@@ -356,7 +362,10 @@ fn filter_unseen(
     items: Vec<playlist::PlaylistItem>,
     seen: &std::collections::HashSet<String>,
 ) -> Vec<playlist::PlaylistItem> {
-    items.into_iter().filter(|it| !seen.contains(&it.id)).collect()
+    items
+        .into_iter()
+        .filter(|it| !seen.contains(&it.id))
+        .collect()
 }
 
 fn fetch_and_cache(url: &str) -> Result<Vec<playlist::PlaylistItem>> {
@@ -389,7 +398,10 @@ fn run_forget(action: ForgetAction) -> Result<()> {
     let removed = state::forget_history(&sel.video_id)?;
     match state::delete_position(&sel.video_id) {
         Ok(()) => {}
-        Err(e) => eprintln!("warning: failed to remove position for {}: {e}", sel.video_id),
+        Err(e) => eprintln!(
+            "warning: failed to remove position for {}: {e}",
+            sel.video_id
+        ),
     }
     println!(
         "Forgot \"{title}\" ({}): removed {removed} history line{} and cleared saved position.",
@@ -414,7 +426,10 @@ fn run_playlists(action: PlaylistsAction) -> Result<()> {
                     existing.name
                 );
             }
-            cfg.playlists.push(config::NamedPlaylist { name: name.clone(), url: url.clone() });
+            cfg.playlists.push(config::NamedPlaylist {
+                name: name.clone(),
+                url: url.clone(),
+            });
             config::save(&cfg)?;
             println!("added \"{name}\" → {url}");
             println!("(stored in {})", config::config_path().display());
@@ -454,7 +469,9 @@ fn run_playlists(action: PlaylistsAction) -> Result<()> {
         PlaylistsAction::Fetch { name } => {
             let cfg = config::load();
             if cfg.playlists.is_empty() {
-                bail!("no playlists configured — add one with `rstube playlists add <name> <url-or-id>`");
+                bail!(
+                    "no playlists configured — add one with `rstube playlists add <name> <url-or-id>`"
+                );
             }
             let targets: Vec<&config::NamedPlaylist> = match name {
                 Some(n) => {
@@ -528,7 +545,9 @@ _rstube_video_ids()      { _rstube_field_in_section videos video_id; }
         (&video_targets[..], video_replacement),
     ] {
         for target in targets {
-            let Some(section_start) = result.find(target) else { continue };
+            let Some(section_start) = result.find(target) else {
+                continue;
+            };
             let after_start = section_start + target.len();
             let section_len = result[after_start..]
                 .find("\n        rstube__subcmd__")
@@ -546,7 +565,11 @@ _rstube_video_ids()      { _rstube_field_in_section videos video_id; }
 
 fn run_videos(action: VideosAction) -> Result<()> {
     match action {
-        VideosAction::Add { url_or_id, start, no_fetch } => {
+        VideosAction::Add {
+            url_or_id,
+            start,
+            no_fetch,
+        } => {
             let (video_id, url_offset) = config::parse_video_spec(&url_or_id)?;
             // Explicit --start wins over a URL's t= param.
             let offset = match start {
@@ -638,7 +661,8 @@ fn run_videos(action: VideosAction) -> Result<()> {
                 return Ok(());
             }
             for (i, v) in cfg.videos.iter().enumerate() {
-                let offset = v.start_offset_secs
+                let offset = v
+                    .start_offset_secs
                     .filter(|&n| n > 0)
                     .map(|n| format!(" @ {}", fmt_dur(n as f64)))
                     .unwrap_or_default();
@@ -714,7 +738,11 @@ fn load_configured_video(video_id: &str, refresh: bool) -> Result<playlist::Play
 
 fn run_show(action: ShowAction) -> Result<()> {
     match action {
-        ShowAction::Finished { verbose, details, json } => {
+        ShowAction::Finished {
+            verbose,
+            details,
+            json,
+        } => {
             let entries = tui::finished_candidates();
             if json {
                 println!("{}", serde_json::to_string_pretty(&entries)?);
@@ -757,8 +785,10 @@ fn run_show(action: ShowAction) -> Result<()> {
         ShowAction::New { refresh, json } => {
             let merged = load_merged_playlists(refresh)?;
             let seen = state::played_video_ids();
-            let unseen: Vec<playlist::PlaylistItem> =
-                merged.into_iter().filter(|it| !seen.contains(&it.id)).collect();
+            let unseen: Vec<playlist::PlaylistItem> = merged
+                .into_iter()
+                .filter(|it| !seen.contains(&it.id))
+                .collect();
             if json {
                 println!("{}", serde_json::to_string_pretty(&unseen)?);
                 return Ok(());
@@ -780,20 +810,34 @@ fn run_show(action: ShowAction) -> Result<()> {
 fn print_history_row_with_date(entry: &state::HistoryEntry) {
     let title = entry.title.as_deref().unwrap_or(&entry.url);
     let pos = fmt_dur(entry.position_on_exit);
-    let dur = entry.duration_secs.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+    let dur = entry
+        .duration_secs
+        .map(fmt_dur)
+        .unwrap_or_else(|| "--:--".into());
     let pct = entry
         .duration_secs
         .filter(|d| *d > 0.0)
         .map(|d| format!(" ({:.0}%)", 100.0 * entry.position_on_exit / d))
         .unwrap_or_default();
-    let ts = if entry.ts_end > 0 { entry.ts_end } else { entry.ts_start };
-    println!("{}  [{pos}/{dur}{pct}] {} {title}", fmt_ts(ts), entry.video_id);
+    let ts = if entry.ts_end > 0 {
+        entry.ts_end
+    } else {
+        entry.ts_start
+    };
+    println!(
+        "{}  [{pos}/{dur}{pct}] {} {title}",
+        fmt_ts(ts),
+        entry.video_id
+    );
 }
 
 fn print_history_row(entry: &state::HistoryEntry) {
     let title = entry.title.as_deref().unwrap_or(&entry.url);
     let pos = fmt_dur(entry.position_on_exit);
-    let dur = entry.duration_secs.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+    let dur = entry
+        .duration_secs
+        .map(fmt_dur)
+        .unwrap_or_else(|| "--:--".into());
     let pct = entry
         .duration_secs
         .filter(|d| *d > 0.0)
@@ -823,9 +867,9 @@ fn show_history(limit: usize, verbose: bool) -> Result<()> {
         } else {
             entry.position_on_exit
         };
-        let effective_dur = entry.duration_secs.or_else(|| {
-            state::get_position(&entry.video_id).and_then(|p| p.duration_secs)
-        });
+        let effective_dur = entry
+            .duration_secs
+            .or_else(|| state::get_position(&entry.video_id).and_then(|p| p.duration_secs));
         let pos = fmt_dur(effective_pos);
         let dur = effective_dur.map(fmt_dur).unwrap_or_else(|| "--:--".into());
         let pct = effective_dur
@@ -834,18 +878,29 @@ fn show_history(limit: usize, verbose: bool) -> Result<()> {
             .unwrap_or_default();
         let marker = if unfinished { " [unclean exit]" } else { "" };
         let date_prefix = if verbose {
-            let end = if entry.ts_end == 0 { "........".into() } else { fmt_ts(entry.ts_end) };
+            let end = if entry.ts_end == 0 {
+                "........".into()
+            } else {
+                fmt_ts(entry.ts_end)
+            };
             format!("{} → {}  ", fmt_ts(entry.ts_start), end)
         } else {
             String::new()
         };
-        println!("{date_prefix}[{pos}/{dur}{pct}] {} {title}{marker}", entry.video_id);
+        println!(
+            "{date_prefix}[{pos}/{dur}{pct}] {} {title}{marker}",
+            entry.video_id
+        );
     }
     Ok(())
 }
 
 fn print_version() {
-    println!("rstube {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
+    println!(
+        "rstube {} by {}",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_AUTHORS")
+    );
     println!("GIT_DESCRIBE: {}", env!("GIT_DESCRIBE"));
     println!("GIT_SHA: {}", env!("GIT_SHA"));
     println!("GIT_BRANCH: {}", env!("GIT_BRANCH"));
@@ -921,21 +976,37 @@ fn install_mpv() -> Result<()> {
 
 fn install_yt_dlp() -> Result<()> {
     if tool_present("pipx") {
-        let argv = vec!["pipx".to_string(), "install".to_string(), "yt-dlp".to_string()];
+        let argv = vec![
+            "pipx".to_string(),
+            "install".to_string(),
+            "yt-dlp".to_string(),
+        ];
         eprintln!("Installing yt-dlp via: {}", argv.join(" "));
         return run_argv(&argv);
     }
     if tool_present("pip") {
-        let argv = vec!["pip".to_string(), "install".to_string(), "--user".to_string(), "yt-dlp".to_string()];
+        let argv = vec![
+            "pip".to_string(),
+            "install".to_string(),
+            "--user".to_string(),
+            "yt-dlp".to_string(),
+        ];
         eprintln!("Installing yt-dlp via: {}", argv.join(" "));
         return run_argv(&argv);
     }
     if tool_present("pip3") {
-        let argv = vec!["pip3".to_string(), "install".to_string(), "--user".to_string(), "yt-dlp".to_string()];
+        let argv = vec![
+            "pip3".to_string(),
+            "install".to_string(),
+            "--user".to_string(),
+            "yt-dlp".to_string(),
+        ];
         eprintln!("Installing yt-dlp via: {}", argv.join(" "));
         return run_argv(&argv);
     }
-    bail!("neither pipx, pip, nor pip3 found — install Python+pip first, or install yt-dlp manually");
+    bail!(
+        "neither pipx, pip, nor pip3 found — install Python+pip first, or install yt-dlp manually"
+    );
 }
 
 fn run_install_deps() -> Result<()> {

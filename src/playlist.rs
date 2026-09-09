@@ -43,8 +43,8 @@ pub fn fetch_video(video_id: &str) -> Result<PlaylistItem> {
         #[serde(default)]
         duration: Option<f64>,
     }
-    let raw: RawVideo = serde_json::from_slice(&output.stdout)
-        .context("failed to parse yt-dlp video JSON")?;
+    let raw: RawVideo =
+        serde_json::from_slice(&output.stdout).context("failed to parse yt-dlp video JSON")?;
     Ok(PlaylistItem {
         id: raw.id.unwrap_or_else(|| video_id.to_owned()),
         title: raw.title,
@@ -71,8 +71,8 @@ pub fn fetch(url: &str) -> Result<Vec<PlaylistItem>> {
         if line.is_empty() {
             continue;
         }
-        let item: PlaylistItem = serde_json::from_slice(line)
-            .context("failed to parse yt-dlp JSON line")?;
+        let item: PlaylistItem =
+            serde_json::from_slice(line).context("failed to parse yt-dlp JSON line")?;
         items.push(item);
     }
     Ok(items)

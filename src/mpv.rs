@@ -35,7 +35,8 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
     let key = state::url_key(req.url);
     let resume_at = compute_resume(&key, req.duration_secs);
 
-    let sock_path: PathBuf = std::env::temp_dir().join(format!("rstube-{}.sock", std::process::id()));
+    let sock_path: PathBuf =
+        std::env::temp_dir().join(format!("rstube-{}.sock", std::process::id()));
     let _ = std::fs::remove_file(&sock_path);
 
     let mut cmd = Command::new("mpv");
@@ -172,8 +173,12 @@ fn spawn_tracker(
                     break;
                 }
                 let Ok(line) = line else { break };
-                let Ok(resp) = serde_json::from_str::<IpcResponse>(&line) else { continue };
-                let Some(req_id) = resp.request_id else { continue };
+                let Ok(resp) = serde_json::from_str::<IpcResponse>(&line) else {
+                    continue;
+                };
+                let Some(req_id) = resp.request_id else {
+                    continue;
+                };
                 let which = {
                     let mut p = reader_pending.lock().unwrap();
                     p.remove(&req_id)
@@ -205,9 +210,8 @@ fn spawn_tracker(
                     let id = next_id;
                     next_id += 1;
                     pending.lock().unwrap().insert(id, prop.to_owned());
-                    let cmd = format!(
-                        r#"{{"command":["get_property","{prop}"],"request_id":{id}}}"#
-                    );
+                    let cmd =
+                        format!(r#"{{"command":["get_property","{prop}"],"request_id":{id}}}"#);
                     if writeln!(writer, "{cmd}").is_err() {
                         return;
                     }

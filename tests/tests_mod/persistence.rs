@@ -24,7 +24,10 @@ fn history_subcommand_reads_state_dir() {
     let out = run(dir.path(), &state_dir, &["history", "show"]);
     assert!(out.status.success(), "history failed: {:?}", out);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("no history yet"), "expected empty-history message, got:\n{stdout}");
+    assert!(
+        stdout.contains("no history yet"),
+        "expected empty-history message, got:\n{stdout}"
+    );
 
     // Seed a fake history line and verify it's rendered.
     std::fs::create_dir_all(&state_dir).unwrap();
@@ -44,7 +47,13 @@ fn history_subcommand_reads_state_dir() {
     let out = run(dir.path(), &state_dir, &["history", "show"]);
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("Never Gonna Give You Up"), "missing title:\n{stdout}");
-    assert!(stdout.contains("1:46"), "expected formatted position 1:46:\n{stdout}");
+    assert!(
+        stdout.contains("Never Gonna Give You Up"),
+        "missing title:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("1:46"),
+        "expected formatted position 1:46:\n{stdout}"
+    );
     assert!(stdout.contains("50%"), "expected 50% progress:\n{stdout}");
 }
