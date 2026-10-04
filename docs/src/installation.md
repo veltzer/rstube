@@ -6,19 +6,19 @@ Pre-built binaries are published for each tagged release on GitHub.
 
 ```bash
 # x86_64 linux
-gh release download latest --repo veltzer/rstube \
+gh release download --repo veltzer/rstube \
   --pattern 'rstube-linux-x86_64' --output rstube --clobber
 
 # aarch64 linux
-gh release download latest --repo veltzer/rstube \
+gh release download --repo veltzer/rstube \
   --pattern 'rstube-linux-aarch64' --output rstube --clobber
 
 # macOS x86_64
-gh release download latest --repo veltzer/rstube \
+gh release download --repo veltzer/rstube \
   --pattern 'rstube-macos-x86_64' --output rstube --clobber
 
 # macOS arm64
-gh release download latest --repo veltzer/rstube \
+gh release download --repo veltzer/rstube \
   --pattern 'rstube-macos-aarch64' --output rstube --clobber
 
 chmod +x rstube
