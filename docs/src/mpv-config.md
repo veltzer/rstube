@@ -13,7 +13,7 @@ save-position-on-quit for rstube's resume flow.
 If you also use mpv outside rstube and want mpv to remember positions on its
 own, add this to `~/.config/mpv/mpv.conf`:
 
-```
+```text
 save-position-on-quit=yes
 ```
 
@@ -26,7 +26,7 @@ mpv has no mouse bindings by default beyond the on-screen controller. To make
 left-click pause/play, add these to `~/.config/mpv/input.conf` (create the file
 if it doesn't exist):
 
-```
+```text
 MBTN_LEFT     cycle pause
 MBTN_RIGHT    cycle mute
 WHEEL_UP      seek 10

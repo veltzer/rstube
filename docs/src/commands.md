@@ -63,13 +63,13 @@ Prints every video you've watched to within 30 seconds of the end. One
 line per video, deduped by video id (most recent session kept), most
 recent first. Default format is just the title:
 
-```
+```text
 <title>
 ```
 
 Pass `-d` / `--details` to include the video id, timing, and percentage:
 
-```
+```text
 [pos/dur (pct%)] <id> <title>
 ```
 
@@ -84,7 +84,7 @@ Every video across all configured playlists and individually configured
 videos that isn't yet in your history. Uses the 24h cache by default;
 pass `--refresh` to refetch. Format:
 
-```
+```text
 [duration] title
 ```
 
@@ -133,7 +133,7 @@ Same mechanism, operating on the `show finished` set. Useful for
 
 Prints a compact one-line-per-entry view of recent plays:
 
-```
+```text
 [12:34/45:00 (27%)] Video title
 ```
 

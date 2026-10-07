@@ -50,7 +50,7 @@ identity and how you refer to a configured video later.
 rstube rejects a `videos add` if the **video id** is already configured,
 regardless of URL shape. Error:
 
-```
+```text
 Error: video id dQw4w9WgXcQ already configured —
        remove it first if you want to re-add
 ```

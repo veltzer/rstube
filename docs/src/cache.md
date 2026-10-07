@@ -38,7 +38,7 @@ simple.
 
 Cache hits print a one-line note including the item count and age:
 
-```
+```text
 Using cached playlist for <url> (217 items, 42m old).
 ```
 
