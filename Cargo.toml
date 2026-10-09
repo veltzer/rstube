@@ -16,7 +16,7 @@ anyhow = "1"
 ratatui = "0.30"
 crossterm = "0.29"
 toml = "0.8"
-redb = "2"
+redb = "4"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
