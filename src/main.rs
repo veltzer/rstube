@@ -934,13 +934,11 @@ fn tool_present(name: &str) -> bool {
 /// single package (appending the package name is the caller's job). Returns
 /// None if no known manager is present.
 fn detect_system_installer() -> Option<Vec<String>> {
-    // Order matters: prefer distro-native over Homebrew on Linux.
     let candidates: &[(&str, &[&str])] = &[
         ("apt-get", &["sudo", "apt-get", "install", "-y"]),
         ("dnf", &["sudo", "dnf", "install", "-y"]),
         ("pacman", &["sudo", "pacman", "-S", "--noconfirm"]),
         ("zypper", &["sudo", "zypper", "install", "-y"]),
-        ("brew", &["brew", "install"]),
     ];
     for (probe, argv) in candidates {
         if tool_present(probe) {
@@ -965,7 +963,7 @@ fn run_argv(argv: &[String]) -> Result<()> {
 fn install_mpv() -> Result<()> {
     let Some(mut argv) = detect_system_installer() else {
         bail!(
-            "could not detect a supported system package manager (apt-get, dnf, pacman, zypper, brew) — \
+            "could not detect a supported system package manager (apt-get, dnf, pacman, zypper) — \
              install mpv manually and re-run"
         );
     };

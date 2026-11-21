@@ -41,8 +41,8 @@ Install whatever is missing:
 rstube install-deps
 ```
 
-This auto-detects your package manager (`apt-get`, `dnf`, `pacman`,
-`zypper`, or `brew`) for mpv, and prefers `pipx` over `pip --user` for
+This auto-detects your package manager (`apt-get`, `dnf`, `pacman`, or
+`zypper`) for mpv, and prefers `pipx` over `pip --user` for
 yt-dlp. Already-installed tools are left alone.
 
 If you'd rather install manually:
@@ -54,10 +54,6 @@ pipx install yt-dlp
 
 # Arch
 sudo pacman -S --noconfirm mpv
-pipx install yt-dlp
-
-# macOS
-brew install mpv
 pipx install yt-dlp
 ```
 
