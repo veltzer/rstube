@@ -13,14 +13,6 @@ gh release download --repo veltzer/rstube \
 gh release download --repo veltzer/rstube \
   --pattern 'rstube-linux-aarch64' --output rstube --clobber
 
-# macOS x86_64
-gh release download --repo veltzer/rstube \
-  --pattern 'rstube-macos-x86_64' --output rstube --clobber
-
-# macOS arm64
-gh release download --repo veltzer/rstube \
-  --pattern 'rstube-macos-aarch64' --output rstube --clobber
-
 chmod +x rstube
 sudo mv rstube /usr/local/bin/
 ```
