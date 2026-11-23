@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
-fn bin() -> &'static str {
+const fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_rstube")
 }
 

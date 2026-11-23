@@ -259,7 +259,7 @@ fn load_playlist_cache_file() -> PlaylistCacheFile {
             entries: HashMap::new(),
         };
     };
-    serde_json::from_slice(&bytes).unwrap_or(PlaylistCacheFile {
+    serde_json::from_slice(&bytes).unwrap_or_else(|_| PlaylistCacheFile {
         entries: HashMap::new(),
     })
 }

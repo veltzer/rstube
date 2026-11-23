@@ -419,17 +419,17 @@ fn draw(
 
 fn render_row(r: &PickerRow) -> Line<'static> {
     let dur = r.duration_secs.map_or_else(|| "--:--".into(), fmt_dur);
-    let progress = match r.position_secs {
-        Some(pos) => {
+    let progress = r.position_secs.map_or_else(
+        || format!("[{dur}] "),
+        |pos| {
             let pct = r
                 .duration_secs
                 .filter(|d| *d > 0.0)
                 .map(|d| format!(" {:>3.0}%", 100.0 * pos / d))
                 .unwrap_or_default();
             format!("[{}/{dur}{pct}] ", fmt_dur(pos))
-        }
-        None => format!("[{dur}] "),
-    };
+        },
+    );
     let title = r.title.clone().unwrap_or_else(|| r.url.clone());
 
     Line::from(vec![

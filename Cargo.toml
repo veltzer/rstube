@@ -57,3 +57,4 @@ debug = true
 # crate (bins, lib, tests, build script). The gate runs clippy with
 # -D warnings, so each of these fails the build.
 pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }

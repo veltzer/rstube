@@ -436,7 +436,6 @@ fn run_playlists(action: PlaylistsAction) -> Result<()> {
             config::save(&cfg)?;
             println!("added \"{name}\" → {url}");
             println!("(stored in {})", config::config_path().display());
-            Ok(())
         }
         PlaylistsAction::Remove { name } => {
             let mut cfg = config::load();
@@ -447,7 +446,6 @@ fn run_playlists(action: PlaylistsAction) -> Result<()> {
             }
             config::save(&cfg)?;
             println!("removed \"{name}\"");
-            Ok(())
         }
         PlaylistsAction::List => {
             let cfg = config::load();
@@ -459,7 +457,6 @@ fn run_playlists(action: PlaylistsAction) -> Result<()> {
             for (i, pl) in cfg.playlists.iter().enumerate() {
                 println!("{:>2}. {}  {}", i + 1, pl.name, pl.url);
             }
-            Ok(())
         }
         PlaylistsAction::Show { name } => {
             let cfg = config::load();
@@ -467,7 +464,6 @@ fn run_playlists(action: PlaylistsAction) -> Result<()> {
                 bail!("no playlist named \"{name}\"");
             };
             println!("{}", pl.url);
-            Ok(())
         }
         PlaylistsAction::Fetch { name } => {
             let cfg = config::load();
@@ -489,9 +485,9 @@ fn run_playlists(action: PlaylistsAction) -> Result<()> {
                 let items = fetch_and_cache(&pl.url)?;
                 println!("{}: {} items cached", pl.name, items.len());
             }
-            Ok(())
         }
     }
+    Ok(())
 }
 
 fn print_completions(shell: Shell) {
@@ -769,7 +765,6 @@ fn run_show(action: ShowAction) -> Result<()> {
                     println!("{title}");
                 }
             }
-            Ok(())
         }
         ShowAction::Partial { verbose, json } => {
             let entries = tui::partial_candidates();
@@ -788,7 +783,6 @@ fn run_show(action: ShowAction) -> Result<()> {
                     print_history_row(e);
                 }
             }
-            Ok(())
         }
         ShowAction::New { refresh, json } => {
             let merged = load_merged_playlists(refresh)?;
@@ -810,9 +804,9 @@ fn run_show(action: ShowAction) -> Result<()> {
                 let dur = it.duration.map_or_else(|| "--:--".into(), fmt_dur);
                 println!("[{dur}] {} {title}", it.id);
             }
-            Ok(())
         }
     }
+    Ok(())
 }
 
 fn print_history_row_with_date(entry: &state::HistoryEntry) {
