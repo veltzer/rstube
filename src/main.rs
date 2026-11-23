@@ -41,12 +41,12 @@ enum Commands {
         #[command(subcommand)]
         action: ForgetAction,
     },
-    /// Manage the configured YouTube playlists (used by `play new`)
+    /// Manage the configured `YouTube` playlists (used by `play new`)
     Playlists {
         #[command(subcommand)]
         action: PlaylistsAction,
     },
-    /// Manage individually configured YouTube videos (merged into play/show pools)
+    /// Manage individually configured `YouTube` videos (merged into play/show pools)
     Videos {
         #[command(subcommand)]
         action: VideosAction,
@@ -62,7 +62,7 @@ enum Commands {
     Version,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone, Copy)]
 enum PlayAction {
     /// Pick a partially-watched video from history to resume
     Partial {
@@ -72,7 +72,7 @@ enum PlayAction {
     },
     /// Pick a never-before-watched video from anywhere in your configured playlists and videos
     New {
-        /// Bypass the playlist cache and refetch from YouTube
+        /// Bypass the playlist cache and refetch from `YouTube`
         #[arg(long)]
         refresh: bool,
         /// Show mpv's terminal status line and verbose log output
@@ -81,7 +81,7 @@ enum PlayAction {
     },
     /// Pick any video across all configured playlists, ignoring watch history
     Any {
-        /// Bypass the playlist cache and refetch from YouTube
+        /// Bypass the playlist cache and refetch from `YouTube`
         #[arg(long)]
         refresh: bool,
         /// Show mpv's terminal status line and verbose log output
@@ -90,7 +90,7 @@ enum PlayAction {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone, Copy)]
 enum HistoryAction {
     /// Show recent playback history
     Show {
@@ -103,7 +103,7 @@ enum HistoryAction {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone, Copy)]
 enum ShowAction {
     /// List videos watched to (near) the end
     Finished {
@@ -113,7 +113,7 @@ enum ShowAction {
         /// Deprecated alias for --verbose
         #[arg(short, long, hide = true)]
         details: bool,
-        /// Emit a JSON array of HistoryEntry objects
+        /// Emit a JSON array of `HistoryEntry` objects
         #[arg(long)]
         json: bool,
     },
@@ -122,13 +122,13 @@ enum ShowAction {
         /// Include the last-seen date alongside timing
         #[arg(short, long)]
         verbose: bool,
-        /// Emit a JSON array of HistoryEntry objects
+        /// Emit a JSON array of `HistoryEntry` objects
         #[arg(long)]
         json: bool,
     },
     /// List videos in configured playlists you haven't started yet
     New {
-        /// Bypass the playlist cache and refetch from YouTube
+        /// Bypass the playlist cache and refetch from `YouTube`
         #[arg(long)]
         refresh: bool,
         /// Emit a JSON array of playlist-item objects
@@ -137,7 +137,7 @@ enum ShowAction {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone, Copy)]
 enum ForgetAction {
     /// Pick a partial video and forget it (removes history + saved position)
     Partial,
@@ -155,7 +155,7 @@ enum PlaylistsAction {
     List,
     /// Print a single playlist's URL by name
     Show { name: String },
-    /// Fetch playlists from YouTube and update the local cache
+    /// Fetch playlists from `YouTube` and update the local cache
     Fetch {
         /// Playlist name to fetch (omit to fetch all configured playlists)
         name: Option<String>,
@@ -183,7 +183,7 @@ enum VideosAction {
     Remove { url_or_id: String },
     /// List configured videos in order
     List,
-    /// Fetch title+duration from YouTube and update the local cache
+    /// Fetch title+duration from `YouTube` and update the local cache
     Fetch {
         /// Video url-or-id to fetch (omit to fetch all configured videos)
         url_or_id: Option<String>,
@@ -197,7 +197,10 @@ fn main() -> Result<()> {
             print_version();
             Ok(())
         }
-        Commands::History { action } => run_history(action),
+        Commands::History { action } => {
+            run_history(action);
+            Ok(())
+        }
         Commands::Play { action } => run_play(action),
         Commands::Show { action } => run_show(action),
         Commands::Forget { action } => run_forget(action),
@@ -211,7 +214,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn run_history(action: HistoryAction) -> Result<()> {
+fn run_history(action: HistoryAction) {
     match action {
         HistoryAction::Show { limit, verbose } => show_history(limit, verbose),
     }
@@ -236,7 +239,7 @@ fn run_play_partial(verbose: bool) -> Result<()> {
         return Ok(());
     };
     ensure_tool("mpv")?;
-    mpv::play(mpv::PlayRequest {
+    mpv::play(&mpv::PlayRequest {
         url: &sel.url,
         title: sel.title.as_deref(),
         duration_secs: sel.duration_secs,
@@ -304,7 +307,7 @@ fn run_play_any(refresh: bool, verbose: bool) -> Result<()> {
         return Ok(());
     };
     ensure_tool("mpv")?;
-    mpv::play(mpv::PlayRequest {
+    mpv::play(&mpv::PlayRequest {
         url: &sel.url,
         title: sel.title.as_deref(),
         duration_secs: sel.duration_secs,
@@ -329,7 +332,7 @@ fn run_play_new(refresh: bool, verbose: bool) -> Result<()> {
         return Ok(());
     };
     ensure_tool("mpv")?;
-    mpv::play(mpv::PlayRequest {
+    mpv::play(&mpv::PlayRequest {
         url: &sel.url,
         title: sel.title.as_deref(),
         duration_secs: sel.duration_secs,
@@ -563,73 +566,78 @@ _rstube_video_ids()      { _rstube_field_in_section videos video_id; }
     format!("{helper}{result}")
 }
 
+fn videos_add(url_or_id: &str, start: Option<&str>, no_fetch: bool) -> Result<()> {
+    let (video_id, url_offset) = config::parse_video_spec(url_or_id)?;
+    // Explicit --start wins over a URL's t= param.
+    let offset = match start {
+        Some(s) => Some(config::parse_time_spec(s)?),
+        None => url_offset,
+    };
+    let mut cfg = config::load();
+    if cfg.videos.iter().any(|v| v.video_id == video_id) {
+        bail!(
+            "video id {video_id} already configured \
+             — remove it first if you want to re-add"
+        );
+    }
+
+    // Fetch first so we validate the id and populate the cache
+    // before committing the config write. --no-fetch skips.
+    let fetched_title: Option<String> = if no_fetch {
+        None
+    } else {
+        ensure_tool("yt-dlp")?;
+        eprintln!("Looking up {video_id} via yt-dlp…");
+        let item = fetch_video_and_cache(&video_id)?;
+        item.title
+    };
+
+    cfg.videos.push(config::ConfiguredVideo {
+        video_id: video_id.clone(),
+        start_offset_secs: offset.filter(|&n| n > 0),
+    });
+    config::save(&cfg)?;
+
+    // Seed a position if the offset is non-zero AND there's no
+    // existing position for this video (existing watch progress
+    // always wins over a fresh offset hint).
+    if let Some(secs) = offset
+        && secs > 0
+        && state::get_position(&video_id).is_none()
+    {
+        let pos = state::Position {
+            secs: u64_to_f64(secs),
+            duration_secs: None,
+            updated_at: state::now_secs(),
+        };
+        state::upsert_position(&video_id, pos)?;
+    }
+
+    let title_suffix = fetched_title
+        .as_deref()
+        .map(|t| format!(" — {t}"))
+        .unwrap_or_default();
+    match offset {
+        Some(secs) if secs > 0 => {
+            println!(
+                "added {video_id} @ {}{title_suffix}",
+                fmt_dur(u64_to_f64(secs))
+            );
+            println!("(seeded as partial; shows up in `rstube play partial`)");
+        }
+        _ => println!("added {video_id}{title_suffix}"),
+    }
+    println!("(stored in {})", config::config_path().display());
+    Ok(())
+}
+
 fn run_videos(action: VideosAction) -> Result<()> {
     match action {
         VideosAction::Add {
             url_or_id,
             start,
             no_fetch,
-        } => {
-            let (video_id, url_offset) = config::parse_video_spec(&url_or_id)?;
-            // Explicit --start wins over a URL's t= param.
-            let offset = match start {
-                Some(s) => Some(config::parse_time_spec(&s)?),
-                None => url_offset,
-            };
-            let mut cfg = config::load();
-            if cfg.videos.iter().any(|v| v.video_id == video_id) {
-                bail!(
-                    "video id {video_id} already configured \
-                     — remove it first if you want to re-add"
-                );
-            }
-
-            // Fetch first so we validate the id and populate the cache
-            // before committing the config write. --no-fetch skips.
-            let fetched_title: Option<String> = if no_fetch {
-                None
-            } else {
-                ensure_tool("yt-dlp")?;
-                eprintln!("Looking up {video_id} via yt-dlp…");
-                let item = fetch_video_and_cache(&video_id)?;
-                item.title
-            };
-
-            cfg.videos.push(config::ConfiguredVideo {
-                video_id: video_id.clone(),
-                start_offset_secs: offset.filter(|&n| n > 0),
-            });
-            config::save(&cfg)?;
-
-            // Seed a position if the offset is non-zero AND there's no
-            // existing position for this video (existing watch progress
-            // always wins over a fresh offset hint).
-            if let Some(secs) = offset
-                && secs > 0
-                && state::get_position(&video_id).is_none()
-            {
-                let pos = state::Position {
-                    position_secs: secs as f64,
-                    duration_secs: None,
-                    updated_at: state::now_secs(),
-                };
-                state::upsert_position(&video_id, pos)?;
-            }
-
-            let title_suffix = fetched_title
-                .as_deref()
-                .map(|t| format!(" — {t}"))
-                .unwrap_or_default();
-            match offset {
-                Some(secs) if secs > 0 => {
-                    println!("added {video_id} @ {}{title_suffix}", fmt_dur(secs as f64));
-                    println!("(seeded as partial; shows up in `rstube play partial`)");
-                }
-                _ => println!("added {video_id}{title_suffix}"),
-            }
-            println!("(stored in {})", config::config_path().display());
-            Ok(())
-        }
+        } => videos_add(&url_or_id, start.as_deref(), no_fetch),
         VideosAction::Remove { url_or_id } => {
             let (video_id, _) = config::parse_video_spec(&url_or_id)?;
             let mut cfg = config::load();
@@ -645,7 +653,7 @@ fn run_videos(action: VideosAction) -> Result<()> {
             // the user has real watch progress — leave it alone.
             if let Some(seeded) = removed.start_offset_secs.filter(|&n| n > 0)
                 && let Some(pos) = state::get_position(&removed.video_id)
-                && (pos.position_secs - seeded as f64).abs() < 0.5
+                && (pos.secs - u64_to_f64(seeded)).abs() < 0.5
                 && let Err(e) = state::delete_position(&removed.video_id)
             {
                 eprintln!("warning: failed to clear seeded position: {e}");
@@ -664,7 +672,7 @@ fn run_videos(action: VideosAction) -> Result<()> {
                 let offset = v
                     .start_offset_secs
                     .filter(|&n| n > 0)
-                    .map(|n| format!(" @ {}", fmt_dur(n as f64)))
+                    .map(|n| format!(" @ {}", fmt_dur(u64_to_f64(n))))
                     .unwrap_or_default();
                 let title = state::find_in_playlist_cache(&v.video_id)
                     .and_then(|it| it.title)
@@ -692,7 +700,7 @@ fn run_videos(action: VideosAction) -> Result<()> {
             ensure_tool("yt-dlp")?;
             for v in targets {
                 let item = fetch_video_and_cache(&v.video_id)?;
-                let dur = item.duration.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+                let dur = item.duration.map_or_else(|| "--:--".into(), fmt_dur);
                 let title = item.title.as_deref().unwrap_or(&v.video_id);
                 println!("{}: [{dur}] {title}", v.video_id);
             }
@@ -799,7 +807,7 @@ fn run_show(action: ShowAction) -> Result<()> {
             }
             for it in &unseen {
                 let title = it.title.as_deref().unwrap_or(&it.id);
-                let dur = it.duration.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+                let dur = it.duration.map_or_else(|| "--:--".into(), fmt_dur);
                 println!("[{dur}] {} {title}", it.id);
             }
             Ok(())
@@ -810,10 +818,7 @@ fn run_show(action: ShowAction) -> Result<()> {
 fn print_history_row_with_date(entry: &state::HistoryEntry) {
     let title = entry.title.as_deref().unwrap_or(&entry.url);
     let pos = fmt_dur(entry.position_on_exit);
-    let dur = entry
-        .duration_secs
-        .map(fmt_dur)
-        .unwrap_or_else(|| "--:--".into());
+    let dur = entry.duration_secs.map_or_else(|| "--:--".into(), fmt_dur);
     let pct = entry
         .duration_secs
         .filter(|d| *d > 0.0)
@@ -834,10 +839,7 @@ fn print_history_row_with_date(entry: &state::HistoryEntry) {
 fn print_history_row(entry: &state::HistoryEntry) {
     let title = entry.title.as_deref().unwrap_or(&entry.url);
     let pos = fmt_dur(entry.position_on_exit);
-    let dur = entry
-        .duration_secs
-        .map(fmt_dur)
-        .unwrap_or_else(|| "--:--".into());
+    let dur = entry.duration_secs.map_or_else(|| "--:--".into(), fmt_dur);
     let pct = entry
         .duration_secs
         .filter(|d| *d > 0.0)
@@ -846,11 +848,11 @@ fn print_history_row(entry: &state::HistoryEntry) {
     println!("[{pos}/{dur}{pct}] {} {title}", entry.video_id);
 }
 
-fn show_history(limit: usize, verbose: bool) -> Result<()> {
+fn show_history(limit: usize, verbose: bool) {
     let path = state::history_path();
     if !path.exists() {
         println!("(no history yet — path: {})", path.display());
-        return Ok(());
+        return;
     }
     let sessions = state::load_history_sessions();
     let start = sessions.len().saturating_sub(limit);
@@ -861,9 +863,7 @@ fn show_history(limit: usize, verbose: bool) -> Result<()> {
         // writing final state. Fall back to positions.redb for the last
         // tracker-written position.
         let effective_pos = if unfinished {
-            state::get_position(&entry.video_id)
-                .map(|p| p.position_secs)
-                .unwrap_or(entry.position_on_exit)
+            state::get_position(&entry.video_id).map_or(entry.position_on_exit, |p| p.secs)
         } else {
             entry.position_on_exit
         };
@@ -871,7 +871,7 @@ fn show_history(limit: usize, verbose: bool) -> Result<()> {
             .duration_secs
             .or_else(|| state::get_position(&entry.video_id).and_then(|p| p.duration_secs));
         let pos = fmt_dur(effective_pos);
-        let dur = effective_dur.map(fmt_dur).unwrap_or_else(|| "--:--".into());
+        let dur = effective_dur.map_or_else(|| "--:--".into(), fmt_dur);
         let pct = effective_dur
             .filter(|d| *d > 0.0)
             .map(|d| format!(" ({:.0}%)", 100.0 * effective_pos / d))
@@ -892,7 +892,6 @@ fn show_history(limit: usize, verbose: bool) -> Result<()> {
             entry.video_id
         );
     }
-    Ok(())
 }
 
 fn print_version() {
@@ -1024,24 +1023,31 @@ fn run_install_deps() -> Result<()> {
         installed_any = true;
     }
 
-    if !installed_any {
-        println!("All dependencies already present.");
-    } else {
+    if installed_any {
         println!("Done. Re-run `rstube install-deps` to verify.");
+    } else {
+        println!("All dependencies already present.");
     }
     Ok(())
 }
 
 fn fmt_ts(ts: u64) -> String {
     chrono::Local
-        .timestamp_opt(ts as i64, 0)
+        .timestamp_opt(ts.cast_signed(), 0)
         .single()
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-        .unwrap_or_else(|| "????-??-?? ??:??:??".into())
+        .map_or_else(
+            || "????-??-?? ??:??:??".into(),
+            |dt| dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+        )
+}
+
+/// Convert whole seconds to `f64`, saturating at `u32::MAX` (far beyond any video length).
+fn u64_to_f64(n: u64) -> f64 {
+    f64::from(u32::try_from(n).unwrap_or(u32::MAX))
 }
 
 fn fmt_dur(secs: f64) -> String {
-    let s = secs as u64;
+    let s = std::time::Duration::try_from_secs_f64(secs).map_or(0, |d| d.as_secs());
     let h = s / 3600;
     let m = (s % 3600) / 60;
     let sec = s % 60;

@@ -31,7 +31,7 @@ pub struct PlayRequest<'a> {
     pub verbose: bool,
 }
 
-pub fn play(req: PlayRequest<'_>) -> Result<()> {
+pub fn play(req: &PlayRequest<'_>) -> Result<()> {
     let key = state::url_key(req.url);
     let resume_at = compute_resume(&key, req.duration_secs);
 
@@ -46,7 +46,7 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
     cmd.arg(format!("--input-ipc-server={}", sock_path.display()));
     if let Some(secs) = resume_at {
         cmd.arg(format!("--start=+{secs}"));
-        eprintln!("(resuming at {:.0}s)", secs);
+        eprintln!("(resuming at {secs:.0}s)");
     }
     if req.verbose {
         cmd.arg("--msg-level=all=v");
@@ -70,7 +70,7 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
         ts_end: 0,
         video_id: key.clone(),
         url: req.url.to_owned(),
-        title: req.title.map(|s| s.to_owned()),
+        title: req.title.map(std::borrow::ToOwned::to_owned),
         duration_secs: req.duration_secs,
         position_on_exit: 0.0,
         audio_only: req.audio_only,
@@ -98,7 +98,7 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
         let _ = state::upsert_position(
             &key,
             Position {
-                position_secs: final_pos,
+                secs: final_pos,
                 duration_secs: duration_for_record,
                 updated_at: state::now_secs(),
             },
@@ -110,7 +110,7 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
         ts_end: state::now_secs(),
         video_id: key,
         url: req.url.to_owned(),
-        title: req.title.map(|s| s.to_owned()),
+        title: req.title.map(std::borrow::ToOwned::to_owned),
         duration_secs: duration_for_record,
         position_on_exit: final_pos,
         audio_only: req.audio_only,
@@ -124,20 +124,20 @@ pub fn play(req: PlayRequest<'_>) -> Result<()> {
 
 fn compute_resume(key: &str, duration_hint: Option<f64>) -> Option<f64> {
     let pos = state::get_position(key)?;
-    if pos.position_secs < MIN_RESUME_SECS {
+    if pos.secs < MIN_RESUME_SECS {
         return None;
     }
     let dur = pos.duration_secs.or(duration_hint);
     if let Some(d) = dur
-        && pos.position_secs > d - RESUME_TAIL_MARGIN_SECS
+        && pos.secs > d - RESUME_TAIL_MARGIN_SECS
     {
         return None;
     }
-    Some(pos.position_secs)
+    Some(pos.secs)
 }
 
 /// Background thread: connect to mpv's IPC socket, poll `time-pos` +
-/// `duration` every POLL_INTERVAL_SECS, persist to positions.redb.
+/// `duration` every `POLL_INTERVAL_SECS`, persist to positions.redb.
 fn spawn_tracker(
     sock_path: PathBuf,
     key: String,
@@ -145,18 +145,15 @@ fn spawn_tracker(
     last_pos: SharedLastPos,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        let stream = match wait_for_socket(&sock_path, &stop, Duration::from_secs(10)) {
-            Some(s) => s,
-            None => return,
+        let Some(stream) = wait_for_socket(&sock_path, &stop, Duration::from_secs(10)) else {
+            return;
         };
         let stream = Arc::new(stream);
-        let reader_stream = match stream.try_clone() {
-            Ok(s) => s,
-            Err(_) => return,
+        let Ok(reader_stream) = stream.try_clone() else {
+            return;
         };
-        let mut writer = match stream.try_clone() {
-            Ok(s) => s,
-            Err(_) => return,
+        let Ok(mut writer) = stream.try_clone() else {
+            return;
         };
 
         let reader = BufReader::new(reader_stream);
@@ -226,7 +223,7 @@ fn spawn_tracker(
                         let _ = state::upsert_position(
                             &key,
                             Position {
-                                position_secs: pos,
+                                secs: pos,
                                 duration_secs: dur,
                                 updated_at: state::now_secs(),
                             },

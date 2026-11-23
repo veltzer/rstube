@@ -98,12 +98,12 @@ fn run_picker_over(entries: Vec<HistoryEntry>, label: &str) -> Result<(usize, Op
 /// Classify a position record by the same rules `is_partial` /
 /// `is_finished` use on history entries.
 fn position_classify(pos: &state::Position) -> PositionClass {
-    if pos.position_secs < MIN_PARTIAL_SECS {
+    if pos.secs < MIN_PARTIAL_SECS {
         return PositionClass::Trivial;
     }
     match pos.duration_secs {
         Some(d) if d > 0.0 => {
-            if pos.position_secs >= d - PARTIAL_TAIL_MARGIN_SECS {
+            if pos.secs >= d - PARTIAL_TAIL_MARGIN_SECS {
                 PositionClass::Finished
             } else {
                 PositionClass::Partial
@@ -137,7 +137,7 @@ fn synthetic_entry_from_position(video_id: &str, pos: &state::Position) -> Histo
         url,
         title,
         duration_secs: pos.duration_secs,
-        position_on_exit: pos.position_secs,
+        position_on_exit: pos.secs,
         audio_only: false,
     }
 }
@@ -272,7 +272,7 @@ fn main_loop(
                 &focus,
                 audio_only,
                 label,
-            )
+            );
         })?;
 
         if !event::poll(Duration::from_millis(200))? {
@@ -348,10 +348,14 @@ fn move_selection(state: &mut ListState, items: &[&PickerRow], delta: i32) {
     if items.is_empty() {
         return;
     }
-    let len = items.len() as i32;
-    let current = state.selected().unwrap_or(0) as i32;
-    let next = (current + delta).clamp(0, len - 1);
-    state.select(Some(next as usize));
+    let last = items.len() - 1;
+    let current = state.selected().unwrap_or(0);
+    let next = if delta < 0 {
+        current.saturating_sub(delta.unsigned_abs() as usize)
+    } else {
+        current.saturating_add(delta.unsigned_abs() as usize)
+    };
+    state.select(Some(next.min(last)));
 }
 
 fn filter_rows<'a>(rows: &'a [PickerRow], filter: &str) -> Vec<&'a PickerRow> {
@@ -414,10 +418,7 @@ fn draw(
 }
 
 fn render_row(r: &PickerRow) -> Line<'static> {
-    let dur = r
-        .duration_secs
-        .map(fmt_dur)
-        .unwrap_or_else(|| "--:--".into());
+    let dur = r.duration_secs.map_or_else(|| "--:--".into(), fmt_dur);
     let progress = match r.position_secs {
         Some(pos) => {
             let pct = r
@@ -438,7 +439,7 @@ fn render_row(r: &PickerRow) -> Line<'static> {
 }
 
 fn fmt_dur(secs: f64) -> String {
-    let s = secs as u64;
+    let s = std::time::Duration::try_from_secs_f64(secs).map_or(0, |d| d.as_secs());
     let h = s / 3600;
     let m = (s % 3600) / 60;
     let sec = s % 60;

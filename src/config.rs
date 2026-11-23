@@ -81,12 +81,12 @@ pub fn save(cfg: &Config) -> Result<()> {
 }
 
 /// Parse a video reference into `(id, optional_offset_seconds)`. Accepts:
-///   - full watch URL: https://www.youtube.com/watch?v=<id>[&...]
-///   - youtu.be short URL: https://youtu.be/<id>[?...]
+///   - full watch URL: <https://www.youtube.com/watch?v>=<id>[&...]
+///   - youtu.be short URL: <https://youtu.be>/<id>[?...]
 ///   - bare 11-char id
 ///
 /// Additionally extracts the `t=` query parameter if present. `t=` values
-/// accept seconds ("178", "178s") and YouTube's compound form ("2m58s",
+/// accept seconds ("178", "178s") and `YouTube`'s compound form ("2m58s",
 /// "1h2m3s").
 pub fn parse_video_spec(input: &str) -> Result<(String, Option<u64>)> {
     let s = input.trim();
@@ -248,7 +248,7 @@ pub fn parse_time_spec(s: &str) -> Result<u64> {
     Ok(total)
 }
 
-/// Accept either a full playlist URL or a bare playlist id (PL..., UU..., OLAK5uy...).
+/// Accept either a full playlist URL or a bare playlist id (PL..., UU..., `OLAK5uy`...).
 /// Returns a canonical URL.
 pub fn normalize_playlist(input: &str) -> Result<String> {
     let s = input.trim();

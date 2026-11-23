@@ -17,6 +17,18 @@ impl PlaylistItem {
     }
 }
 
+// yt-dlp -j outputs one big JSON object. Parse the fields we want; the
+// rest are ignored.
+#[derive(Deserialize)]
+struct RawVideo {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    duration: Option<f64>,
+}
+
 /// Fetch a single video's metadata via `yt-dlp -j <watch-url>`. Unlike the
 /// playlist fetch, this is a full per-video call — 1-3s typical — and returns
 /// `title` and `duration` fields populated.
@@ -31,17 +43,6 @@ pub fn fetch_video(video_id: &str) -> Result<PlaylistItem> {
             "yt-dlp video fetch failed for {video_id}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-    }
-    // yt-dlp -j outputs one big JSON object. Parse the fields we want; the
-    // rest are ignored.
-    #[derive(Deserialize)]
-    struct RawVideo {
-        #[serde(default)]
-        id: Option<String>,
-        #[serde(default)]
-        title: Option<String>,
-        #[serde(default)]
-        duration: Option<f64>,
     }
     let raw: RawVideo =
         serde_json::from_slice(&output.stdout).context("failed to parse yt-dlp video JSON")?;

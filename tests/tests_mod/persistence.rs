@@ -22,7 +22,7 @@ fn history_subcommand_reads_state_dir() {
 
     // No history yet — should succeed and mention the path.
     let out = run(dir.path(), &state_dir, &["history", "show"]);
-    assert!(out.status.success(), "history failed: {:?}", out);
+    assert!(out.status.success(), "history failed: {out:?}");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("no history yet"),

@@ -3,14 +3,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::playlist::PlaylistItem;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Position {
-    pub position_secs: f64,
+    #[serde(rename = "position_secs")]
+    pub secs: f64,
     pub duration_secs: Option<f64>,
     pub updated_at: u64,
 }
@@ -56,8 +57,7 @@ pub fn playlist_cache_path() -> PathBuf {
 pub fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs())
 }
 
 pub fn ensure_state_dir() -> Result<PathBuf> {
@@ -195,7 +195,7 @@ pub fn forget_history(video_id: &str) -> Result<usize> {
     Ok(removed)
 }
 
-/// Extract a YouTube video id from a URL. Returns None if no recognizable id
+/// Extract a `YouTube` video id from a URL. Returns None if no recognizable id
 /// is present (in which case we fall back to the URL itself as a stable key).
 pub fn video_id_from_url(url: &str) -> Option<String> {
     if let Some(rest) = url.split_once("v=").map(|(_, r)| r) {
@@ -215,12 +215,7 @@ pub fn url_key(url: &str) -> String {
     video_id_from_url(url).unwrap_or_else(|| url.to_owned())
 }
 
-#[allow(dead_code)]
-pub fn path_exists(p: &Path) -> bool {
-    p.exists()
-}
-
-/// Set of every video_id that has been touched — either appears in
+/// Set of every `video_id` that has been touched — either appears in
 /// history.jsonl (any session at all counts) or has a saved position in
 /// positions.redb. Used to filter "unseen" sets in `play new` / `show new`
 /// so that a video with an offset-seeded position (no history yet) still
