@@ -5,7 +5,7 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -91,7 +91,8 @@ pub fn play(req: &PlayRequest<'_>) -> Result<()> {
     let _ = tracker.join();
     let _ = std::fs::remove_file(&sock_path);
 
-    let (final_pos, final_dur) = (*last_pos.lock().unwrap()).unwrap_or((0.0, req.duration_secs));
+    let (final_pos, final_dur) = (*last_pos.lock().unwrap_or_else(PoisonError::into_inner))
+        .unwrap_or((0.0, req.duration_secs));
     let duration_for_record = final_dur.or(req.duration_secs);
 
     if final_pos > 0.0 {
@@ -177,12 +178,14 @@ fn spawn_tracker(
                     continue;
                 };
                 let which = {
-                    let mut p = reader_pending.lock().unwrap();
+                    let mut p = reader_pending
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner);
                     p.remove(&req_id)
                 };
                 let Some(which) = which else { continue };
                 if let Some(v) = resp.data.and_then(|d| d.as_f64()) {
-                    let mut l = reader_latest.lock().unwrap();
+                    let mut l = reader_latest.lock().unwrap_or_else(PoisonError::into_inner);
                     match which.as_str() {
                         "time-pos" => l.0 = Some(v),
                         "duration" => l.1 = Some(v),
@@ -206,7 +209,10 @@ fn spawn_tracker(
                 for prop in ["time-pos", "duration"] {
                     let id = next_id;
                     next_id += 1;
-                    pending.lock().unwrap().insert(id, prop.to_owned());
+                    pending
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .insert(id, prop.to_owned());
                     let cmd =
                         format!(r#"{{"command":["get_property","{prop}"],"request_id":{id}}}"#);
                     if writeln!(writer, "{cmd}").is_err() {
@@ -215,9 +221,9 @@ fn spawn_tracker(
                 }
                 thread::sleep(Duration::from_millis(200));
 
-                let snapshot = *latest.lock().unwrap();
+                let snapshot = *latest.lock().unwrap_or_else(PoisonError::into_inner);
                 if let (Some(pos), dur) = snapshot {
-                    *last_pos.lock().unwrap() = Some((pos, dur));
+                    *last_pos.lock().unwrap_or_else(PoisonError::into_inner) = Some((pos, dur));
                     let fingerprint = (pos.to_bits(), dur.map(f64::to_bits));
                     if last_written != Some(fingerprint) {
                         let _ = state::upsert_position(
