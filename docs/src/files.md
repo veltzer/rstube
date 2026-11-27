@@ -3,7 +3,7 @@
 ## Config
 
 | Location | Contents |
-|---|---|
+| --- | --- |
 | `$RSTUBE_CONFIG_DIR/config.toml` | Configured playlists and videos (TOML) |
 
 Fallbacks, in order:
@@ -15,7 +15,7 @@ Fallbacks, in order:
 ## State
 
 | Location | Contents |
-|---|---|
+| --- | --- |
 | `$RSTUBE_STATE_DIR/positions.redb` | Per-video resume positions (redb key/value store) |
 | `$RSTUBE_STATE_DIR/history.jsonl` | Playback history (JSON-lines, append on play, rewritten on `forget`) |
 | `$RSTUBE_STATE_DIR/playlist_cache.json` | Cached playlist and single-video metadata (JSON) |
@@ -29,7 +29,7 @@ Fallbacks:
 ## Env vars
 
 | Var | Effect |
-|---|---|
+| --- | --- |
 | `RSTUBE_CONFIG_DIR` | Override the config directory |
 | `RSTUBE_STATE_DIR` | Override the state directory |
 | `XDG_CONFIG_HOME` | Standard XDG var; respected if `RSTUBE_CONFIG_DIR` is unset |

@@ -3,7 +3,7 @@
 Top-level commands in `rstube`.
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `rstube play partial [-v]` | Pick a partially-watched video from history |
 | `rstube play new [--refresh] [-v]` | Pick an unwatched video from anywhere in your configured playlists and videos |
 | `rstube play any [--refresh] [-v]` | Pick any video across all configured playlists and videos |

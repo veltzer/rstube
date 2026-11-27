@@ -50,7 +50,7 @@ spawn time.
 These are mpv defaults (no config needed). Useful to know before customizing:
 
 | Key | Action |
-|---|---|
+| --- | --- |
 | `space` / `p` | Pause / resume |
 | `f` | Toggle fullscreen |
 | `Esc` | Exit fullscreen (doesn't quit) |
