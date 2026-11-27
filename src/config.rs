@@ -81,8 +81,8 @@ pub fn save(cfg: &Config) -> Result<()> {
 }
 
 /// Parse a video reference into `(id, optional_offset_seconds)`. Accepts:
-///   - full watch URL: <https://www.youtube.com/watch?v>=<id>[&...]
-///   - youtu.be short URL: <https://youtu.be>/<id>[?...]
+///   - full watch URL: `https://www.youtube.com/watch?v=<id>[&...]`
+///   - youtu.be short URL: `https://youtu.be/<id>[?...]`
 ///   - bare 11-char id
 ///
 /// Additionally extracts the `t=` query parameter if present. `t=` values
