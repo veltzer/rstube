@@ -59,6 +59,7 @@ debug = true
 # errors too, and its pedantic and nursery groups are on: the gate runs
 # clippy with -D warnings, so each of those fails the build as well.
 [lints.rust]
+missing_docs = "warn"
 warnings = "deny"
 
 [lints.clippy]

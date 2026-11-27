@@ -1,3 +1,5 @@
+//! rstube: Search and play `YouTube` videos from the terminal.
+
 mod config;
 mod mpv;
 mod playlist;
